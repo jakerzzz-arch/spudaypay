@@ -222,6 +222,9 @@
       <button class="btn-like" id="playerLikeBtn" title="Like / Save Song">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
       </button>
+      <button class="btn-like" id="playerDownloadBtn" title="Download Song (MP3)" style="margin-left: 4px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      </button>
     </div>
 
     <!-- Center: Controls & Scrubber -->
@@ -304,10 +307,13 @@
     <div id="ytPlayer"></div>
   </div>
 
+  <!-- Toast Notification System -->
+  <div id="spudayToast" class="spuday-toast"></div>
+
   <!-- JavaScript Modules -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="music-data.js?v=11"></script>
-  <script src="app.js?v=11"></script>
+  <script src="music-data.js?v=12"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>

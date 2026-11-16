@@ -357,10 +357,12 @@ function togglePlayPause() {
 
 function playNextTrack() {
   if (isShuffled) {
+    const pool = (currentTrackList.length > 3) ? currentTrackList : CURATED_TRACKS;
+    currentTrackList = pool;
     let nextIndex;
     do {
-      nextIndex = Math.floor(Math.random() * currentTrackList.length);
-    } while (nextIndex === currentTrackIndex && currentTrackList.length > 1);
+      nextIndex = Math.floor(Math.random() * pool.length);
+    } while (nextIndex === currentTrackIndex && pool.length > 1);
     loadTrack(nextIndex, true);
   } else {
     let nextIndex = currentTrackIndex + 1;
@@ -472,11 +474,156 @@ function setupControls() {
     if (current) toggleLikeTrack(current);
   });
 
-  // Surprise Me / Random
-  btnRandom.addEventListener('click', () => {
-    const randomIdx = Math.floor(Math.random() * currentTrackList.length);
-    loadTrack(randomIdx, true);
+  // Download track
+  const playerDownloadBtn = document.getElementById('playerDownloadBtn');
+  if (playerDownloadBtn) {
+    playerDownloadBtn.addEventListener('click', downloadCurrentTrack);
+  }
+
+  // Surprise Me / Global Infinite Discovery
+  btnRandom.addEventListener('click', async () => {
+    await playSurpriseTrack();
   });
+}
+
+// Global Discovery Query Pool
+const GLOBAL_DISCOVERY_QUERIES = [
+  "Today's Top Hits", "Billboard Hot 100", "Global Viral Hits",
+  "Bruno Mars", "Billie Eilish", "Sabrina Carpenter", "The Weeknd",
+  "Taylor Swift", "Post Malone", "Dua Lipa", "Drake", "Kendrick Lamar",
+  "Coldplay", "Olivia Rodrigo", "Travis Scott", "Ariana Grande",
+  "Ed Sheeran", "Justin Bieber", "Rihanna", "Harry Styles", "SZA",
+  "Imagine Dragons", "Eminem", "Queen", "Michael Jackson", "Maroon 5"
+];
+
+async function playSurpriseTrack() {
+  showToast("🎲 Exploring global hits...");
+  // 50% chance: pick from local curated catalog
+  // 50% chance: query live global online catalog for a fresh hit
+  const useOnlineDiscovery = Math.random() > 0.45;
+  if (useOnlineDiscovery) {
+    const randomQuery = GLOBAL_DISCOVERY_QUERIES[Math.floor(Math.random() * GLOBAL_DISCOVERY_QUERIES.length)];
+    try {
+      bufferingSpinner.style.display = 'block';
+      const results = await fetchFullLengthTracks(randomQuery);
+      bufferingSpinner.style.display = 'none';
+      if (results && results.length > 0) {
+        const picked = results[Math.floor(Math.random() * results.length)];
+        currentTrackList.unshift(picked);
+        loadTrack(0, true);
+        showToast(`🎲 Discovered: ${picked.title} - ${picked.artist}`);
+        return;
+      }
+    } catch (_) {
+      bufferingSpinner.style.display = 'none';
+    }
+  }
+
+  const randomIdx = Math.floor(Math.random() * CURATED_TRACKS.length);
+  currentTrackList = [...CURATED_TRACKS];
+  loadTrack(randomIdx, true);
+  showToast(`🎲 Playing: ${CURATED_TRACKS[randomIdx].title}`);
+}
+
+// Download & Offline Storage Functions
+let toastTimer = null;
+function showToast(msg, duration = 3000) {
+  const toast = document.getElementById('spudayToast');
+  if (!toast) return;
+  toast.textContent = msg;
+  toast.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove('show');
+  }, duration);
+}
+
+function getDownloadedTracks() {
+  try {
+    return JSON.parse(localStorage.getItem('spudaypay_downloads') || '[]');
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveDownloadedTrack(track) {
+  const current = getDownloadedTracks();
+  if (!current.some(t => t.id === track.id || t.title === track.title)) {
+    current.unshift({
+      id: track.id || `dl-${Date.now()}`,
+      title: track.title,
+      artist: track.artist,
+      album: track.album || "Downloaded",
+      cover: track.cover,
+      streamUrl: track.streamUrl,
+      duration: track.duration,
+      downloadedAt: new Date().toLocaleDateString()
+    });
+    localStorage.setItem('spudaypay_downloads', JSON.stringify(current));
+  }
+}
+
+async function downloadCurrentTrack() {
+  const track = currentTrackList[currentTrackIndex];
+  if (!track) {
+    showToast("No track selected to download");
+    return;
+  }
+  await downloadTrackDirect(track);
+}
+
+async function downloadTrackDirect(track) {
+  showToast(`⏳ Preparing download for "${track.title}"...`);
+
+  let targetUrl = track.streamUrl;
+
+  if (!targetUrl) {
+    try {
+      const fullMatches = await fetchFullLengthTracks(`${track.title} ${track.artist}`);
+      const match = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist)) || fullMatches[0];
+      if (match && match.streamUrl) {
+        targetUrl = match.streamUrl;
+        track.streamUrl = match.streamUrl;
+        track.resolvedFull = true;
+      }
+    } catch (_) {}
+  }
+
+  if (targetUrl) {
+    const filename = `${track.title} - ${track.artist}.mp3`.replace(/[/\\?%*:|"<>]/g, '_');
+    triggerAudioDownload(targetUrl, filename);
+    saveDownloadedTrack(track);
+    showToast(`✓ Download started: ${track.title}! Check your Downloads folder.`);
+  } else {
+    showToast(`Ready in app stream. Direct MP3 resolving...`);
+  }
+}
+
+function triggerAudioDownload(url, filename) {
+  fetch(url)
+    .then(res => {
+      if (!res.ok) throw new Error("Stream fetch failed");
+      return res.blob();
+    })
+    .then(blob => {
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+    })
+    .catch(() => {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    });
 }
 
 function setVolume(val) {
@@ -674,11 +821,25 @@ function renderFeaturedGrid(tracks) {
   renderSpotifyHomeSections('all');
 }
 
-// Render Library
+// Render Library (Downloaded songs + Curated favorites)
 function renderLibraryGrid() {
   libraryGrid.innerHTML = '';
-  const allTracks = [...CURATED_TRACKS];
+  const downloaded = getDownloadedTracks();
+  const allTracks = [...downloaded, ...CURATED_TRACKS.filter(c => !downloaded.some(d => d.title === c.title))];
+
+  if (downloaded.length > 0) {
+    const headerEl = document.createElement('div');
+    headerEl.style.gridColumn = '1 / -1';
+    headerEl.style.marginBottom = '8px';
+    headerEl.innerHTML = `<h3 style="font-size: 1.1rem; color: var(--accent-green); display: flex; align-items: center; gap: 8px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      Downloaded Songs (${downloaded.length})
+    </h3>`;
+    libraryGrid.appendChild(headerEl);
+  }
+
   allTracks.forEach((track, idx) => {
+    const isDownloaded = downloaded.some(d => d.id === track.id || d.title === track.title);
     const card = document.createElement('div');
     card.className = 'music-card';
     card.innerHTML = `
@@ -690,6 +851,7 @@ function renderLibraryGrid() {
       </div>
       <div class="card-title">${track.title}</div>
       <div class="card-artist">${track.artist}</div>
+      ${isDownloaded ? '<div class="download-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Downloaded</div>' : ''}
     `;
     card.addEventListener('click', () => {
       currentTrackList = allTracks;
@@ -933,9 +1095,12 @@ function renderTableRows(tableBody, tracks) {
         </div>
       </td>
       <td class="table-meta-text">${track.album || track.artist}</td>
-      <td style="text-align: center">
+      <td style="text-align: center; white-space: nowrap;">
         <button class="btn-like ${isLiked ? 'liked' : ''}" data-like-id="${track.id}" title="Like">
           <svg viewBox="0 0 24 24" fill="${isLiked ? '#ec4899' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+        </button>
+        <button class="btn-like btn-table-dl" title="Download MP3" style="margin-left: 6px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
         </button>
       </td>
       <td style="text-align: right; color: var(--text-dim)">${formatTime(track.duration || 0)}</td>
@@ -948,14 +1113,25 @@ function renderTableRows(tableBody, tracks) {
     });
 
     // Like click
-    const likeBtn = row.querySelector('.btn-like');
-    likeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleLikeTrack(track);
-      likeBtn.classList.toggle('liked', likedSongs.has(track.id));
-      const svg = likeBtn.querySelector('svg');
-      svg.setAttribute('fill', likedSongs.has(track.id) ? '#ec4899' : 'none');
-    });
+    const likeBtn = row.querySelector('.btn-like:not(.btn-table-dl)');
+    if (likeBtn) {
+      likeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleLikeTrack(track);
+        likeBtn.classList.toggle('liked', likedSongs.has(track.id));
+        const svg = likeBtn.querySelector('svg');
+        svg.setAttribute('fill', likedSongs.has(track.id) ? '#ec4899' : 'none');
+      });
+    }
+
+    // Download click
+    const dlBtn = row.querySelector('.btn-table-dl');
+    if (dlBtn) {
+      dlBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        downloadTrackDirect(track);
+      });
+    }
 
     tableBody.appendChild(row);
   });
