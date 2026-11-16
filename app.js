@@ -88,7 +88,7 @@ function formatTime(seconds) {
 }
 
 // Load Track into Player
-function loadTrack(index, autoPlay = true) {
+async function loadTrack(index, autoPlay = true) {
   if (index < 0 || index >= currentTrackList.length) return;
   currentTrackIndex = index;
   const track = currentTrackList[currentTrackIndex];
@@ -102,6 +102,21 @@ function loadTrack(index, autoPlay = true) {
   totalDurationLabel.textContent = formatTime(track.duration || 0);
   progressBarFill.style.width = "0%";
   progressThumb.style.left = "0%";
+  highlightActiveTrackInTables(track.id);
+
+  // If this track came from the Global Catalog and hasn't been upgraded to a full stream yet, try resolving full audio
+  if (track.needsFullResolve && !track.resolvedFull) {
+    bufferingSpinner.style.display = 'block';
+    try {
+      const fullMatches = await fetchFullLengthTracks(`${track.title} ${track.artist}`);
+      if (fullMatches.length > 0 && fullMatches[0].streamUrl) {
+        track.streamUrl = fullMatches[0].streamUrl;
+        track.duration = fullMatches[0].duration || track.duration;
+        track.resolvedFull = true;
+      }
+    } catch (_) {}
+    bufferingSpinner.style.display = 'none';
+  }
 
   audio.src = track.streamUrl;
   audio.load();
@@ -115,8 +130,6 @@ function loadTrack(index, autoPlay = true) {
       artwork: [{ src: track.cover, sizes: '512x512', type: 'image/jpeg' }]
     });
   }
-
-  highlightActiveTrackInTables(track.id);
 
   if (autoPlay) {
     playTrack();
@@ -596,14 +609,45 @@ async function performSearch(query) {
     t.album.toLowerCase().includes(query.toLowerCase())
   );
 
-  // 2. Search Full-Length 320kbps Global Catalog (100% Full Songs Only)
-  const onlineTracks = await fetchFullLengthTracks(query);
+  // 2. Fetch both Full-Length Catalog + Global Catalog in parallel so NO songs are ever missing
+  const [fullTracks, globalCatalogTracks] = await Promise.all([
+    fetchFullLengthTracks(query),
+    (async () => {
+      try {
+        const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=20`);
+        const data = await res.json();
+        if (data.results) {
+          return data.results.map(item => ({
+            id: `global-${item.trackId}`,
+            title: item.trackName,
+            artist: item.artistName,
+            album: item.collectionName || item.trackName,
+            duration: Math.round(item.trackTimeMillis / 1000) || 180,
+            cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '400x400bb') : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
+            streamUrl: item.previewUrl,
+            needsFullResolve: true
+          }));
+        }
+      } catch (_) {}
+      return [];
+    })()
+  ]);
 
   searchStatusBar.style.display = 'none';
 
-  const combinedResults = [...localMatches, ...onlineTracks];
+  // Deduplicate by title + artist (preferring already-resolved fullTracks first)
+  const seen = new Set();
+  const combinedResults = [];
+  for (const t of [...localMatches, ...fullTracks, ...globalCatalogTracks]) {
+    const key = `${(t.title || '').toLowerCase().trim()}|${(t.artist || '').toLowerCase().trim()}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      combinedResults.push(t);
+    }
+  }
+
   if (combinedResults.length === 0) {
-    searchTableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 30px; color: var(--text-dim)">No matching full-length tracks found. Try searching another song or artist.</td></tr>`;
+    searchTableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 30px; color: var(--text-dim)">No matching tracks found. Try searching another song or artist.</td></tr>`;
     return;
   }
 
