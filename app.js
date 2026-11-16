@@ -495,37 +495,117 @@ function setupSearch() {
   });
 }
 
+function decodeHtmlEntities(str) {
+  if (!str) return "";
+  const txt = document.createElement("textarea");
+  txt.innerHTML = str;
+  return txt.value;
+}
+
+async function fetchFullLengthTracks(query) {
+  const endpoints = [
+    `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}&limit=20`,
+    `https://saavn.sumit.co/api/search/songs?query=${encodeURIComponent(query)}&limit=20`,
+    `https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}&limit=20`
+  ];
+
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const json = await res.json();
+      const results = json?.data?.results || json?.results || [];
+      if (results.length > 0) {
+        const mapped = results.map(item => {
+          const dlList = item.downloadUrl || item.download_url || [];
+          const bestAudio = Array.isArray(dlList) && dlList.length > 0
+            ? (dlList[dlList.length - 1].url || dlList[dlList.length - 1].link)
+            : null;
+          const imgList = item.image || [];
+          const bestImg = Array.isArray(imgList) && imgList.length > 0
+            ? (imgList[imgList.length - 1].url || imgList[imgList.length - 1].link)
+            : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&h=400&fit=crop';
+          const artistStr = item.artists?.primary
+            ? item.artists.primary.map(a => a.name).join(', ')
+            : (item.primaryArtists || item.subtitle || "Artist");
+
+          return {
+            id: `full-${item.id}`,
+            title: decodeHtmlEntities(item.name || item.title),
+            artist: decodeHtmlEntities(artistStr),
+            album: decodeHtmlEntities(item.album?.name || item.name || "Single"),
+            duration: Number(item.duration) || 210,
+            cover: bestImg,
+            streamUrl: bestAudio
+          };
+        }).filter(t => t.streamUrl);
+
+        if (mapped.length > 0) return mapped;
+      }
+    } catch (e) {
+      // Try next mirror
+    }
+  }
+
+  // Secondary Full-Length Source: Audius Open Music Network
+  try {
+    const audiusRes = await fetch(`https://discoveryprovider.audius.co/v1/tracks/search?query=${encodeURIComponent(query)}&app_name=Spudaypay`);
+    if (audiusRes.ok) {
+      const audiusJson = await audiusRes.json();
+      if (audiusJson?.data?.length > 0) {
+        return audiusJson.data.slice(0, 15).map(item => ({
+          id: `audius-${item.id}`,
+          title: item.title,
+          artist: item.user?.name || "Independent Artist",
+          album: item.genre || "Full Track",
+          duration: Number(item.duration) || 180,
+          cover: item.artwork?.['480x480'] || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&h=400&fit=crop',
+          streamUrl: `https://discoveryprovider.audius.co/v1/tracks/${item.id}/stream?app_name=Spudaypay`
+        }));
+      }
+    }
+  } catch (e) {
+    console.warn("Audius fallback failed:", e);
+  }
+
+  return [];
+}
+
 async function performSearch(query) {
   switchView('search');
   searchStatusBar.style.display = 'flex';
   document.getElementById('searchResultsTitle').textContent = `Search results for "${query}"`;
   searchTableBody.innerHTML = '';
 
-  // 1. Search in local curated library
+  // 1. Search in local curated library (Full-length tracks)
   const localMatches = CURATED_TRACKS.filter(t => 
     t.title.toLowerCase().includes(query.toLowerCase()) || 
     t.artist.toLowerCase().includes(query.toLowerCase()) ||
     t.album.toLowerCase().includes(query.toLowerCase())
   );
 
-  // 2. Search in global public music catalog (iTunes Search API - no CORS restriction)
-  let onlineTracks = [];
-  try {
-    const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=15`);
-    const data = await res.json();
-    if (data.results) {
-      onlineTracks = data.results.map(item => ({
-        id: `itunes-${item.trackId}`,
-        title: item.trackName,
-        artist: item.artistName,
-        album: item.collectionName || item.trackName,
-        duration: Math.round(item.trackTimeMillis / 1000) || 30,
-        cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '400x400bb') : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
-        streamUrl: item.previewUrl
-      }));
+  // 2. Search Full-Length 320kbps Global Catalog
+  let onlineTracks = await fetchFullLengthTracks(query);
+
+  // 3. Fallback to iTunes only if all full-track mirrors are offline
+  if (onlineTracks.length === 0) {
+    try {
+      const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=15`);
+      const data = await res.json();
+      if (data.results) {
+        onlineTracks = data.results.map(item => ({
+          id: `itunes-${item.trackId}`,
+          title: `${item.trackName} (30s Preview)`,
+          artist: item.artistName,
+          album: item.collectionName || item.trackName,
+          duration: 30,
+          cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '400x400bb') : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
+          streamUrl: item.previewUrl
+        }));
+      }
+    } catch (err) {
+      console.warn("Fallback search failed:", err);
     }
-  } catch (err) {
-    console.warn("Public catalog fetch failed, relying on local search:", err);
   }
 
   searchStatusBar.style.display = 'none';
