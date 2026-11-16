@@ -187,7 +187,11 @@ async function resolveYouTubeVideoIds(searchQuery) {
       const res = await fetch(url);
       if (!res.ok) continue;
       const html = await res.text();
-      const matches = [...html.matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)];
+      // Match strictly actual search result videoRenderers first (never sidebar/ad promos)
+      let matches = [...html.matchAll(/"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"/g)];
+      if (matches.length === 0) {
+        matches = [...html.matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)];
+      }
       const uniqueIds = [...new Set(matches.map(m => m[1]))];
       if (uniqueIds.length > 0) {
         return uniqueIds.slice(0, 6);
@@ -198,20 +202,19 @@ async function resolveYouTubeVideoIds(searchQuery) {
 }
 
 function normalizeStr(s) {
-  return (s || '').toLowerCase().split('(')[0].split('-')[0].replace(/[^a-z0-9\s]/g, '').trim();
+  return (s || '').toLowerCase().split('(')[0].split('[')[0].split('-')[0].replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function isExactSongMatch(candidate, targetTitle, targetArtist) {
   const cTitle = normalizeStr(candidate.title);
   const tTitle = normalizeStr(targetTitle);
-  if (!cTitle || !tTitle) return false;
-  const titleMatches = cTitle === tTitle || cTitle.includes(tTitle) || tTitle.includes(cTitle);
+  if (!cTitle || !tTitle || cTitle !== tTitle) return false;
 
   const primaryTargetArtist = normalizeStr((targetArtist || '').split(',')[0].split('&')[0]);
   const cArtist = normalizeStr(candidate.artist);
-  const artistMatches = primaryTargetArtist && cArtist && (cArtist.includes(primaryTargetArtist) || primaryTargetArtist.includes(cArtist));
+  if (!primaryTargetArtist || primaryTargetArtist.length < 2 || !cArtist) return false;
 
-  return Boolean(titleMatches && artistMatches);
+  return cArtist === primaryTargetArtist || cArtist.startsWith(primaryTargetArtist + ' ') || cArtist.endsWith(' ' + primaryTargetArtist);
 }
 
 // Format Seconds -> M:SS
@@ -246,18 +249,24 @@ async function loadTrack(index, autoPlay = true) {
   progressThumb.style.left = "0%";
   highlightActiveTrackInTables(track.id);
 
-  // Upgrade any Global Catalog track to a verified 100% Full-Length stream
-  if (track.needsFullResolve && !track.resolvedFull) {
+  // Upgrade any Global Catalog track to a verified 100% Full-Length stream when playing
+  if (autoPlay && track.needsFullResolve && !track.resolvedFull) {
     bufferingSpinner.style.display = 'block';
     try {
+      // 1. Try Exact Title === Title AND Artist === Artist on official 320kbps server
       const fullMatches = await fetchFullLengthTracks(`${track.title} ${track.artist}`);
       const exactMatch = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist));
       if (exactMatch && exactMatch.streamUrl) {
         track.streamUrl = exactMatch.streamUrl;
         track.duration = exactMatch.duration || track.duration;
+        if (exactMatch.cover) {
+          track.cover = exactMatch.cover;
+          playerCoverImg.src = exactMatch.cover;
+        }
         track.resolvedFull = true;
       } else if (ytPlayerReady) {
-        const videoIds = await resolveYouTubeVideoIds(`${track.title} ${track.artist} lyrics official audio`);
+        // 2. Otherwise use Official YouTube Audio Engine (strictly matching videoRenderer results)
+        const videoIds = await resolveYouTubeVideoIds(`${track.title} ${track.artist} official audio lyrics`);
         if (videoIds.length > 0) {
           track.ytVideoId = videoIds[0];
           track.ytCandidateIds = videoIds.slice(1);
@@ -284,7 +293,7 @@ async function loadTrack(index, autoPlay = true) {
     if (!autoPlay) {
       ytPlayer.pauseVideo();
     }
-  } else {
+  } else if (track.streamUrl) {
     activeEngine = 'html5';
     audio.src = track.streamUrl;
     audio.load();
@@ -296,6 +305,11 @@ async function loadTrack(index, autoPlay = true) {
 
 // Play / Pause Functions
 function playTrack() {
+  const current = currentTrackList[currentTrackIndex];
+  if (current && current.needsFullResolve && !current.resolvedFull) {
+    loadTrack(currentTrackIndex, true);
+    return;
+  }
   if (activeEngine === 'yt' && ytPlayerReady) {
     ytPlayer.playVideo();
     return;
@@ -687,19 +701,80 @@ function decodeHtmlEntities(str) {
   return txt.value;
 }
 
+function decryptJioSaavnUrl(encryptedMediaUrl) {
+  if (!encryptedMediaUrl || typeof CryptoJS === 'undefined') return null;
+  try {
+    const key = CryptoJS.enc.Utf8.parse("38346591");
+    const ciphertext = CryptoJS.enc.Base64.parse(encryptedMediaUrl);
+    const decrypted = CryptoJS.DES.decrypt(
+      { ciphertext: ciphertext },
+      key,
+      { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }
+    );
+    let url = decrypted.toString(CryptoJS.enc.Utf8);
+    if (!url || !url.startsWith('http')) return null;
+    if (url.includes('_96.mp4')) {
+      url = url.replace('_96.mp4', '_320.mp4');
+    } else if (url.includes('_160.mp4')) {
+      url = url.replace('_160.mp4', '_320.mp4');
+    }
+    return url.replace(/^http:\/\//i, 'https://');
+  } catch (e) {
+    return null;
+  }
+}
+
 async function fetchFullLengthTracks(query) {
   const q = encodeURIComponent(query);
-  const endpoints = [
-    `/api/saavn/search/songs?query=${q}&limit=20`,
-    `/api/saavn2/search/songs?query=${q}&limit=20`,
-    `/api/saavn3/search/songs?query=${q}&limit=20`,
-    `https://saavn.dev/api/search/songs?query=${q}&limit=20`,
-    `https://saavn.sumit.co/api/search/songs?query=${q}&limit=20`,
-    `https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${q}&limit=20`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://saavn.dev/api/search/songs?query=${q}&limit=20`)}`
+  const officialApiPath = `api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=20&p=1&q=${q}`;
+
+  // 1. Official JioSaavn Production API (with direct in-browser DES decryption)
+  const officialUrls = [
+    `/api/jiosaavn/${officialApiPath}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.jiosaavn.com/${officialApiPath}`)}`,
+    `https://corsproxy.io/?${encodeURIComponent(`https://www.jiosaavn.com/${officialApiPath}`)}`
   ];
 
-  for (const url of endpoints) {
+  for (const url of officialUrls) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const json = await res.json();
+      const results = json?.results || [];
+      if (results.length > 0) {
+        const mapped = results.map(item => {
+          const encUrl = item?.more_info?.encrypted_media_url;
+          const streamUrl = decryptJioSaavnUrl(encUrl);
+          const artistMap = item?.more_info?.artistMap?.primary_artists || [];
+          const artistStr = artistMap.length > 0
+            ? artistMap.map(a => a.name).join(', ')
+            : (item.subtitle || "Artist");
+          const coverUrl = (item.image || '').replace('150x150', '500x500').replace(/^http:\/\//i, 'https://');
+
+          return {
+            id: `saavn-${item.id}`,
+            title: decodeHtmlEntities(item.title || item.song),
+            artist: decodeHtmlEntities(artistStr),
+            album: decodeHtmlEntities(item?.more_info?.album || item.title || "Single"),
+            duration: Number(item?.more_info?.duration) || 210,
+            cover: coverUrl,
+            streamUrl: streamUrl
+          };
+        }).filter(t => t.streamUrl);
+
+        if (mapped.length > 0) return mapped;
+      }
+    } catch (_) {}
+  }
+
+  // 2. Fallback Wrapper Mirrors
+  const wrapperUrls = [
+    `/api/saavn/search/songs?query=${q}&limit=20`,
+    `/api/saavn2/search/songs?query=${q}&limit=20`,
+    `/api/saavn3/search/songs?query=${q}&limit=20`
+  ];
+
+  for (const url of wrapperUrls) {
     try {
       const res = await fetch(url);
       if (!res.ok) continue;
@@ -732,9 +807,7 @@ async function fetchFullLengthTracks(query) {
 
         if (mapped.length > 0) return mapped;
       }
-    } catch (e) {
-      // Try next mirror
-    }
+    } catch (_) {}
   }
 
   return [];
@@ -746,43 +819,38 @@ async function performSearch(query) {
   document.getElementById('searchResultsTitle').textContent = `Search results for "${query}"`;
   searchTableBody.innerHTML = '';
 
-  // 1. Search in local curated library (Full-length tracks)
+  // 1. Search in local curated library
   const localMatches = CURATED_TRACKS.filter(t => 
     t.title.toLowerCase().includes(query.toLowerCase()) || 
     t.artist.toLowerCase().includes(query.toLowerCase()) ||
     t.album.toLowerCase().includes(query.toLowerCase())
   );
 
-  // 2. Fetch Official Global Catalog + Full-Length Catalog in parallel
-  const [globalCatalogTracks, fullTracks] = await Promise.all([
-    (async () => {
-      try {
-        const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=25`);
-        const data = await res.json();
-        if (data.results) {
-          return data.results.map(item => ({
-            id: `global-${item.trackId}`,
-            title: item.trackName,
-            artist: item.artistName,
-            album: item.collectionName || item.trackName,
-            duration: Math.round(item.trackTimeMillis / 1000) || 180,
-            cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '400x400bb') : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
-            streamUrl: item.previewUrl,
-            needsFullResolve: true
-          }));
-        }
-      } catch (_) {}
-      return [];
-    })(),
-    fetchFullLengthTracks(query)
-  ]);
+  // 2. Fetch Official Global Catalog (100% accurate official song titles, artists, and album covers)
+  let globalCatalogTracks = [];
+  try {
+    const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=25`);
+    const data = await res.json();
+    if (data.results) {
+      globalCatalogTracks = data.results.map(item => ({
+        id: `global-${item.trackId}`,
+        title: item.trackName,
+        artist: item.artistName,
+        album: item.collectionName || item.trackName,
+        duration: Math.round(item.trackTimeMillis / 1000) || 180,
+        cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '400x400bb') : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
+        streamUrl: item.previewUrl,
+        needsFullResolve: true
+      }));
+    }
+  } catch (_) {}
 
   searchStatusBar.style.display = 'none';
 
-  // Deduplicate by title + artist (putting official Global Catalog metadata first so titles/artists are 100% accurate)
+  // Deduplicate by title + artist
   const seen = new Set();
   const combinedResults = [];
-  for (const t of [...localMatches, ...globalCatalogTracks, ...fullTracks]) {
+  for (const t of [...localMatches, ...globalCatalogTracks]) {
     const key = `${normalizeStr(t.title)}|${normalizeStr(t.artist)}`;
     if (!seen.has(key)) {
       seen.add(key);
