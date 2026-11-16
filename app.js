@@ -261,7 +261,7 @@ async function loadTrack(index, autoPlay = true) {
     try {
       // 1. Try Exact Title === Title AND Artist === Artist on official 320kbps server
       const fullMatches = await fetchFullLengthTracks(`${track.title} ${track.artist}`);
-      const exactMatch = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist));
+      const exactMatch = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist)) || fullMatches[0];
       if (exactMatch && exactMatch.streamUrl) {
         track.streamUrl = exactMatch.streamUrl;
         track.duration = exactMatch.duration || track.duration;
@@ -440,7 +440,17 @@ function setupControls() {
   btnShuffle.addEventListener('click', () => {
     isShuffled = !isShuffled;
     btnShuffle.classList.toggle('active', isShuffled);
+    if (isShuffled) {
+      shuffleHomeScreenSamples();
+    }
   });
+
+  const btnShuffleSamples = document.getElementById('btnShuffleSamples');
+  if (btnShuffleSamples) {
+    btnShuffleSamples.addEventListener('click', () => {
+      shuffleHomeScreenSamples();
+    });
+  }
 
   btnRepeat.addEventListener('click', () => {
     isRepeat = !isRepeat;
@@ -522,6 +532,7 @@ async function playSurpriseTrack() {
   const randomIdx = Math.floor(Math.random() * CURATED_TRACKS.length);
   currentTrackList = [...CURATED_TRACKS];
   loadTrack(randomIdx, true);
+  shuffleHomeScreenSamples();
   showToast(`🎲 Playing: ${CURATED_TRACKS[randomIdx].title}`);
 }
 
@@ -727,11 +738,12 @@ function filterGenre(genre) {
   renderSpotifyHomeSections(genre);
 }
 
-// Render Quick Picks (Top 8 cards like Spotify)
-function renderQuickPicks() {
+// Render Quick Picks (Top 8 cards like Spotify, customizable by shuffle)
+function renderQuickPicks(customList = null) {
   if (!quickPicksGrid) return;
   quickPicksGrid.innerHTML = '';
-  CURATED_TRACKS.slice(0, 8).forEach((track, idx) => {
+  const list = customList || CURATED_TRACKS.slice(0, 8);
+  list.forEach((track, idx) => {
     const card = document.createElement('div');
     card.className = 'quick-pick-card';
     card.innerHTML = `
@@ -742,15 +754,23 @@ function renderQuickPicks() {
       </div>
     `;
     card.addEventListener('click', () => {
-      currentTrackList = [...CURATED_TRACKS];
+      currentTrackList = list;
       loadTrack(idx, true);
     });
     quickPicksGrid.appendChild(card);
   });
 }
 
+// Shuffle home screen samples to fresh songs
+function shuffleHomeScreenSamples() {
+  const shuffled = [...CURATED_TRACKS].sort(() => 0.5 - Math.random());
+  renderQuickPicks(shuffled.slice(0, 8));
+  renderSpotifyHomeSections('all', true);
+  showToast("🔀 Shuffled new songs onto your home screen!");
+}
+
 // Render Spotify-like Categorized Sections
-function renderSpotifyHomeSections(genre = 'all') {
+function renderSpotifyHomeSections(genre = 'all', shuffleTracks = false) {
   if (!homeSectionsContainer) return;
   homeSectionsContainer.innerHTML = '';
 
@@ -772,9 +792,13 @@ function renderSpotifyHomeSections(genre = 'all') {
   }
 
   sectionsToRender.forEach(section => {
-    const sectionTracks = (genre === 'all')
+    let sectionTracks = (genre === 'all')
       ? CURATED_TRACKS.filter(t => t.category === section.id)
       : CURATED_TRACKS.filter(t => t.genre === genre || t.category === section.id);
+
+    if (shuffleTracks) {
+      sectionTracks = [...sectionTracks].sort(() => 0.5 - Math.random());
+    }
 
     if (sectionTracks.length === 0) return;
 
