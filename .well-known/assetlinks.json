@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.netlify.preeminent_kitten_e39dfe.twa",
+        "sha256_cert_fingerprints": ["81:EF:73:16:B6:84:03:FC:BA:83:39:69:09:DB:3C:38:FC:18:EC:00:E0:40:BE:FD:CB:F3:63:32:29:D7:1D:43"]
+      }
+    }]
