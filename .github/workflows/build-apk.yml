@@ -5,6 +5,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -15,13 +18,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
-      - name: Setup Java JDK 17
+      - name: Setup Java JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -41,9 +44,16 @@ jobs:
           cd android
           chmod +x ./gradlew
           ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk ../Spudaypay.apk
 
       - name: Upload Spudaypay.apk Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Spudaypay-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: Spudaypay.apk
+
+      - name: Create GitHub Release with Spudaypay.apk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v1.0.${{ github.run_number }}" Spudaypay.apk --title "Spudaypay Android APK v1.0.${{ github.run_number }}" --notes "100% Standalone Spudaypay Android APK (No Chrome required)"
