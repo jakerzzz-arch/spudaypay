@@ -1,3 +1,4 @@
+/api/yt/* https://www.youtube.com/:splat 200
 /api/saavn/* https://saavn.dev/api/:splat 200
 /api/saavn2/* https://saavn.sumit.co/api/:splat 200
 /api/saavn3/* https://jiosaavn-api-privatecvc2.vercel.app/:splat 200
