@@ -111,7 +111,7 @@ function loadTrack(index, autoPlay = true) {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: track.title,
       artist: track.artist,
-      album: track.album || "Synapse Hybrid",
+      album: track.album || "Spudaypay Hybrid",
       artwork: [{ src: track.cover, sizes: '512x512', type: 'image/jpeg' }]
     });
   }

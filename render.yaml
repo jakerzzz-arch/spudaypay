@@ -1,8 +1,8 @@
 services:
   - type: web
-    name: synapse-music-player
+    name: spudaypay
     runtime: static
-    buildCommand: echo "Static build ready"
+    buildCommand: echo "Spudaypay static build ready"
     staticPublishPath: .
     routes:
       - type: rewrite

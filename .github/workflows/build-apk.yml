@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Spudaypay Android APK
 
 on:
   push:
@@ -29,10 +29,10 @@ jobs:
       - name: Initialize Capacitor & Android Project
         run: |
           mkdir -p www
-          cp index.html styles.css app.js music-data.js manifest.json sw.js icon.svg www/
+          cp index.html styles.css app.js music-data.js manifest.json sw.js icon.svg icon-192.png icon-512.png www/
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "Synapse Music" "com.synapse.music" --web-dir www
+          npx cap init "Spudaypay" "com.spudaypay.music" --web-dir www
           npx cap add android
           npx cap sync android
 
@@ -42,8 +42,8 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug
 
-      - name: Upload Synapse-Music.apk Artifact
+      - name: Upload Spudaypay.apk Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Synapse-Music-APK
+          name: Spudaypay-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk

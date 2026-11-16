@@ -1,24 +1,18 @@
-# 🎵 SYNAPSE Hybrid Music Player
+# 🎵 SPUDAYPAY — Hybrid Music Player
 
-A sleek, lightweight, ad-free streaming music player inspired by Spotify, tailored for smooth performance on Windows.
+A sleek, lightweight, ad-free streaming music player for Windows & Android, designed for smooth performance on your laptop and phone.
 
 ## ✨ Highlights
 - **100% Ad-Free:** Direct audio streaming with zero commercial interruptions or banner ads.
-- **Ultra-Lightweight:** Consumes only ~30 MB of RAM (ideal for your 8 GB laptop).
+- **Ultra-Lightweight:** Consumes only ~30 MB of RAM.
 - **Curated High-Fidelity Radio:** Built-in Lo-Fi, Synthwave, Cyberpunk, Pop, and Deep Focus channels.
 - **Live Search & Streaming:** Search millions of tracks with instant metadata, high-res album covers, and playable audio.
 - **Direct Audio URL Streaming:** Paste any direct `.mp3` or streaming URL into the search bar to play immediately.
-- **Local MP3 Drag & Drop:** Click "Add Local MP3s" or drag-and-drop tracks from your laptop to play your own library.
-- **Liked Songs Library:** Heart your favorite tracks; automatically saved in your browser's persistent storage.
-- **Native Windows 11 Media Controls:** Full support for Windows Media Session (play/pause via keyboard media keys and lock screen).
+- **Local MP3 Drag & Drop:** Click "Add Local MP3s" or drag-and-drop tracks from your laptop or phone.
+- **Liked Songs Library:** Heart your favorite tracks; automatically saved in persistent storage.
+- **Native Windows 11 & Android Media Controls:** Full support for lock screen and keyboard media keys.
 
-## ⌨️ Keyboard Shortcuts
-- `Space`: Play / Pause
-- `→` (Right Arrow): Seek forward 5 seconds
-- `←` (Left Arrow): Seek backward 5 seconds
-- `M`: Mute / Unmute
-- `S`: Toggle Shuffle
-- `R`: Toggle Repeat
-
-## 🚀 How to Launch
-Double-click `start.bat` or open `index.html` in Google Chrome or Microsoft Edge.
+## 🚀 How to Launch or Deploy
+- **On Laptop:** Double-click `start.bat` or open `index.html`.
+- **On Phone via Wi-Fi:** Double-click `share-to-phone.bat`.
+- **Deploy to Render.com & Build APK:** Double-click `push-to-github.bat`.

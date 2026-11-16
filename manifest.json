@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Synapse Music — Hybrid Player",
-  "short_name": "Synapse",
-  "description": "100% Ad-Free Hybrid Music Streaming Player",
+  "name": "Spudaypay — Hybrid Music Player",
+  "short_name": "Spudaypay",
+  "description": "Spudaypay 100% Ad-Free Hybrid Music Streaming Player",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
