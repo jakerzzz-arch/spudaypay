@@ -42,6 +42,7 @@ const searchStatusBar = document.getElementById('searchStatusBar');
 const searchTableBody = document.getElementById('searchTableBody');
 const likedTableBody = document.getElementById('likedTableBody');
 const quickPicksGrid = document.getElementById('quickPicksGrid');
+const homeSectionsContainer = document.getElementById('homeSectionsContainer');
 const featuredGrid = document.getElementById('featuredGrid');
 const libraryGrid = document.getElementById('libraryGrid');
 const likedCountBadge = document.getElementById('likedCountBadge');
@@ -57,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadLikedSongsFromStorage();
   updateGreeting();
   renderQuickPicks();
-  renderFeaturedGrid(currentTrackList);
+  renderSpotifyHomeSections();
   setupNavigation();
   setupAudioEvents();
   setupControls();
@@ -576,20 +577,14 @@ function switchView(tabName) {
 
 function filterGenre(genre) {
   switchView('home');
-  if (genre === 'all') {
-    currentTrackList = [...CURATED_TRACKS];
-    currentGenreLabel.textContent = "All Tracks";
-  } else {
-    currentTrackList = CURATED_TRACKS.filter(t => t.genre === genre);
-    currentGenreLabel.textContent = genre.toUpperCase();
-  }
-  renderFeaturedGrid(currentTrackList);
+  renderSpotifyHomeSections(genre);
 }
 
-// Render Quick Picks (Top 6 cards)
+// Render Quick Picks (Top 8 cards like Spotify)
 function renderQuickPicks() {
+  if (!quickPicksGrid) return;
   quickPicksGrid.innerHTML = '';
-  CURATED_TRACKS.slice(0, 6).forEach((track, idx) => {
+  CURATED_TRACKS.slice(0, 8).forEach((track, idx) => {
     const card = document.createElement('div');
     card.className = 'quick-pick-card';
     card.innerHTML = `
@@ -607,28 +602,76 @@ function renderQuickPicks() {
   });
 }
 
-// Render Featured Grid
-function renderFeaturedGrid(tracks) {
-  featuredGrid.innerHTML = '';
-  tracks.forEach((track, idx) => {
-    const card = document.createElement('div');
-    card.className = 'music-card';
-    card.innerHTML = `
-      <div class="card-img-wrap">
-        <img src="${track.cover}" alt="${track.title}" loading="lazy">
-        <div class="card-floating-play">
-          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+// Render Spotify-like Categorized Sections
+function renderSpotifyHomeSections(genre = 'all') {
+  if (!homeSectionsContainer) return;
+  homeSectionsContainer.innerHTML = '';
+
+  const sectionsToRender = (genre === 'all')
+    ? SPOTIFY_SECTIONS
+    : SPOTIFY_SECTIONS.filter(s => s.genre === genre || s.id === genre);
+
+  if (sectionsToRender.length === 0) {
+    const filteredTracks = CURATED_TRACKS.filter(t => t.genre === genre);
+    if (filteredTracks.length > 0) {
+      sectionsToRender.push({
+        id: genre,
+        title: genre.charAt(0).toUpperCase() + genre.slice(1) + " Tracks",
+        subtitle: `Curated ${genre} selection`,
+        tag: genre.toUpperCase(),
+        genre: genre
+      });
+    }
+  }
+
+  sectionsToRender.forEach(section => {
+    const sectionTracks = (genre === 'all')
+      ? CURATED_TRACKS.filter(t => t.category === section.id)
+      : CURATED_TRACKS.filter(t => t.genre === genre || t.category === section.id);
+
+    if (sectionTracks.length === 0) return;
+
+    const sectionEl = document.createElement('div');
+    sectionEl.className = 'content-section';
+    sectionEl.innerHTML = `
+      <div class="section-header">
+        <div>
+          <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 3px;">${section.title}</h2>
+          <p style="font-size: 0.82rem; color: var(--text-secondary); margin: 0;">${section.subtitle}</p>
         </div>
+        <span class="genre-tag">${section.tag}</span>
       </div>
-      <div class="card-title">${track.title}</div>
-      <div class="card-artist">${track.artist}</div>
+      <div class="cards-grid"></div>
     `;
-    card.addEventListener('click', () => {
-      currentTrackList = tracks;
-      loadTrack(idx, true);
+
+    const grid = sectionEl.querySelector('.cards-grid');
+    sectionTracks.forEach((track) => {
+      const card = document.createElement('div');
+      card.className = 'music-card';
+      card.innerHTML = `
+        <div class="card-img-wrap">
+          <img src="${track.cover}" alt="${track.title}" loading="lazy">
+          <div class="card-floating-play">
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+          </div>
+        </div>
+        <div class="card-title">${track.title}</div>
+        <div class="card-artist">${track.artist}</div>
+      `;
+      card.addEventListener('click', () => {
+        currentTrackList = sectionTracks;
+        const trackIdx = sectionTracks.findIndex(t => t.id === track.id);
+        loadTrack(trackIdx >= 0 ? trackIdx : 0, true);
+      });
+      grid.appendChild(card);
     });
-    featuredGrid.appendChild(card);
+
+    homeSectionsContainer.appendChild(sectionEl);
   });
+}
+
+function renderFeaturedGrid(tracks) {
+  renderSpotifyHomeSections('all');
 }
 
 // Render Library

@@ -93,20 +93,12 @@
         </div>
 
         <div class="header-right">
-          <a href="/Spudaypay.apk" download="Spudaypay.apk" class="badge-btn install-btn" id="btnDownloadApk" style="text-decoration:none">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            <span>Download APK</span>
-          </a>
-          <button class="badge-btn install-btn" id="btnInstallApp" style="display:none">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            <span>Install App</span>
-          </button>
           <button class="badge-btn" id="btnRandom">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
             <span>Surprise Me</span>
           </button>
-          <div class="user-avatar" title="Hybrid Music Player">
-            <span>M</span>
+          <div class="user-avatar" title="Spudaypay Music">
+            <span>S</span>
           </div>
         </div>
       </header>
@@ -116,17 +108,18 @@
         <!-- View: HOME -->
         <section class="view active" id="viewHome">
           <div class="greeting-banner">
-            <h1 id="greetingText">Good afternoon</h1>
+            <h1 id="greetingText">Good evening</h1>
             <p class="subtitle">Experience high-fidelity music streaming. Zero ads, zero interruptions.</p>
           </div>
 
           <!-- Mobile Horizontal Genre Bar -->
           <div class="mobile-genre-chips">
             <button class="playlist-pill active" data-genre="all">🔥 All</button>
-            <button class="playlist-pill" data-genre="lofi">☕ Lo-Fi</button>
-            <button class="playlist-pill" data-genre="synthwave">🌆 Synthwave</button>
-            <button class="playlist-pill" data-genre="focus">🧠 Focus</button>
             <button class="playlist-pill" data-genre="pop">⚡ Pop</button>
+            <button class="playlist-pill" data-genre="synthwave">🌆 Charts</button>
+            <button class="playlist-pill" data-genre="lofi">☕ Lo-Fi</button>
+            <button class="playlist-pill" data-genre="rock">🎸 Rock</button>
+            <button class="playlist-pill" data-genre="hiphop">🌙 Late Night</button>
           </div>
 
           <!-- Quick Picks Grid -->
@@ -134,15 +127,9 @@
             <!-- Injected by JS -->
           </div>
 
-          <!-- Featured Section -->
-          <div class="content-section">
-            <div class="section-header">
-              <h2>Featured Tracks & Playlists</h2>
-              <span class="genre-tag" id="currentGenreLabel">All Tracks</span>
-            </div>
-            <div class="cards-grid" id="featuredGrid">
-              <!-- Injected by JS -->
-            </div>
+          <!-- Spotify-like Browse Sections Container -->
+          <div id="homeSectionsContainer">
+            <!-- Dynamically injected categories & grids -->
           </div>
         </section>
 
@@ -320,7 +307,7 @@
   <!-- JavaScript Modules -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="music-data.js?v=10"></script>
-  <script src="app.js?v=10"></script>
+  <script src="music-data.js?v=11"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>
