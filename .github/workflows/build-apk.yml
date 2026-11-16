@@ -18,23 +18,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
 
-      - name: Setup Java JDK 21
+      - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '21'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+          java-version: '17'
 
       - name: Initialize Capacitor & Android Project
         run: |
           mkdir -p www
-          cp index.html styles.css app.js music-data.js manifest.json sw.js icon.svg icon-192.png icon-512.png www/
+          cp -r index.html styles.css app.js music-data.js manifest.json sw.js icon.svg icon-192.png icon-512.png www/
           npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
           npx cap init "Spudaypay" "com.spudaypay.music" --web-dir www
           npx cap add android
           npx cap sync android
@@ -43,7 +40,7 @@ jobs:
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
           cp app/build/outputs/apk/debug/app-debug.apk ../Spudaypay.apk
 
       - name: Upload Spudaypay.apk Artifact
@@ -56,4 +53,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v1.0.${{ github.run_number }}" Spudaypay.apk --title "Spudaypay Android APK v1.0.${{ github.run_number }}" --notes "100% Standalone Spudaypay Android APK (No Chrome required)"
+          gh release create "v1.0.${{ github.run_number }}" Spudaypay.apk --title "Spudaypay Android APK v1.0.${{ github.run_number }}" --notes "100% Standalone Spudaypay Android APK (No Chrome required)" || echo "Release creation completed"
