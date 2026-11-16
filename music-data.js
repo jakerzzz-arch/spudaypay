@@ -872,18 +872,6 @@ const CURATED_TRACKS = [
     "preview": true
   },
   {
-    "id": "track-68",
-    "title": "Bohemian Rhapsody",
-    "artist": "Queen",
-    "album": "A Night at the Opera",
-    "genre": "rock",
-    "category": "classics",
-    "duration": 218,
-    "cover": "https://c.saavncdn.com/806/Bohemian-Rhapsody-Haryanvi-2025-20250910130600-500x500.jpg",
-    "streamUrl": "https://aac.saavncdn.com/806/442b9d1e36a4bcef050a32de50a82316_320.mp4",
-    "resolvedFull": true
-  },
-  {
     "id": "track-69",
     "title": "Counting Stars",
     "artist": "OneRepublic",

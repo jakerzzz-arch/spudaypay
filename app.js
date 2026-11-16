@@ -261,7 +261,7 @@ async function loadTrack(index, autoPlay = true) {
     try {
       // 1. Try Exact Title === Title AND Artist === Artist on official 320kbps server
       const fullMatches = await fetchFullLengthTracks(`${track.title} ${track.artist}`);
-      const exactMatch = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist)) || fullMatches[0];
+      const exactMatch = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist));
       if (exactMatch && exactMatch.streamUrl) {
         track.streamUrl = exactMatch.streamUrl;
         track.duration = exactMatch.duration || track.duration;
@@ -515,10 +515,25 @@ async function playSurpriseTrack() {
     const randomQuery = GLOBAL_DISCOVERY_QUERIES[Math.floor(Math.random() * GLOBAL_DISCOVERY_QUERIES.length)];
     try {
       bufferingSpinner.style.display = 'block';
-      const results = await fetchFullLengthTracks(randomQuery);
+      const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(randomQuery)}&entity=song&limit=25`);
+      const data = await res.json();
       bufferingSpinner.style.display = 'none';
-      if (results && results.length > 0) {
-        const picked = results[Math.floor(Math.random() * results.length)];
+      const validResults = (data.results || []).filter(item =>
+        item.previewUrl &&
+        !/karaoke|instrumental|tribute|sped up|slowed|8d|lullaby|cover/i.test(item.trackName)
+      );
+      if (validResults.length > 0) {
+        const item = validResults[Math.floor(Math.random() * validResults.length)];
+        const picked = {
+          id: `global-${item.trackId}`,
+          title: item.trackName,
+          artist: item.artistName,
+          album: item.collectionName || item.trackName,
+          duration: 30,
+          cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '600x600bb') : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&h=500&fit=crop',
+          streamUrl: item.previewUrl,
+          resolvedFull: true
+        };
         currentTrackList.unshift(picked);
         loadTrack(0, true);
         showToast(`🎲 Discovered: ${picked.title} - ${picked.artist}`);
@@ -591,7 +606,7 @@ async function downloadTrackDirect(track) {
   if (!targetUrl) {
     try {
       const fullMatches = await fetchFullLengthTracks(`${track.title} ${track.artist}`);
-      const match = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist)) || fullMatches[0];
+      const match = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist));
       if (match && match.streamUrl) {
         targetUrl = match.streamUrl;
         track.streamUrl = match.streamUrl;
@@ -975,8 +990,13 @@ async function fetchFullLengthTracks(query) {
       if (!res.ok) continue;
       const json = await res.json();
       const results = json?.results || [];
+      const badRegex = /karaoke|instrumental|nightcore|ambient|tribute|slowed|sped up|piano|cover|backing track|zzang|originally performed|in the style/i;
       if (results.length > 0) {
-        const mapped = results.map(item => {
+        const mapped = results.filter(item => {
+          const lang = (item.language || '').toLowerCase();
+          const text = `${item.title || item.song || ''} ${item?.more_info?.album || ''} ${item.subtitle || ''}`;
+          return lang !== 'instrumental' && !badRegex.test(text);
+        }).map(item => {
           const encUrl = item?.more_info?.encrypted_media_url;
           const streamUrl = decryptJioSaavnUrl(encUrl);
           const artistMap = item?.more_info?.artistMap?.primary_artists || [];
@@ -1014,8 +1034,13 @@ async function fetchFullLengthTracks(query) {
       if (!res.ok) continue;
       const json = await res.json();
       const results = json?.data?.results || json?.results || [];
+      const badRegex = /karaoke|instrumental|nightcore|ambient|tribute|slowed|sped up|piano|cover|backing track|zzang|originally performed|in the style/i;
       if (results.length > 0) {
-        const mapped = results.map(item => {
+        const mapped = results.filter(item => {
+          const lang = (item.language || '').toLowerCase();
+          const text = `${item.name || item.title || ''} ${item.album?.name || item.album || ''}`;
+          return lang !== 'instrumental' && !badRegex.test(text);
+        }).map(item => {
           const dlList = item.downloadUrl || item.download_url || [];
           const bestAudio = Array.isArray(dlList) && dlList.length > 0
             ? (dlList[dlList.length - 1].url || dlList[dlList.length - 1].link)
@@ -1066,15 +1091,15 @@ async function performSearch(query) {
     const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=25`);
     const data = await res.json();
     if (data.results) {
-      globalCatalogTracks = data.results.map(item => ({
+      globalCatalogTracks = data.results.filter(item => item.previewUrl).map(item => ({
         id: `global-${item.trackId}`,
         title: item.trackName,
         artist: item.artistName,
         album: item.collectionName || item.trackName,
-        duration: Math.round(item.trackTimeMillis / 1000) || 180,
-        cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '400x400bb') : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
+        duration: 30,
+        cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '600x600bb') : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
         streamUrl: item.previewUrl,
-        needsFullResolve: true
+        resolvedFull: true
       }));
     }
   } catch (_) {}
