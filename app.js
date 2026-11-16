@@ -103,6 +103,21 @@ window.onYouTubeIframeAPIReady = function () {
         ytPlayerReady = true;
         ytPlayer.setVolume(Math.round((previousVolume || 0.8) * 100));
       },
+      onError: () => {
+        // If a VEVO video blocks embedding (error 101/150), automatically try the next matching videoId
+        const track = currentTrackList[currentTrackIndex];
+        if (track && Array.isArray(track.ytCandidateIds) && track.ytCandidateIds.length > 0) {
+          const nextId = track.ytCandidateIds.shift();
+          track.ytVideoId = nextId;
+          ytPlayer.loadVideoById(nextId);
+        } else if (track && track.streamUrl) {
+          // Fallback to direct HTML5 audio stream
+          activeEngine = 'html5';
+          audio.src = track.streamUrl;
+          audio.load();
+          playTrack();
+        }
+      },
       onStateChange: (event) => {
         if (activeEngine !== 'yt') return;
         if (event.data === YT.PlayerState.PLAYING) {
@@ -159,7 +174,7 @@ function stopYtProgressLoop() {
   }
 }
 
-async function resolveYouTubeVideoId(searchQuery) {
+async function resolveYouTubeVideoIds(searchQuery) {
   const q = encodeURIComponent(searchQuery);
   const ytSearchUrls = [
     `/api/yt/results?search_query=${q}`,
@@ -172,13 +187,31 @@ async function resolveYouTubeVideoId(searchQuery) {
       const res = await fetch(url);
       if (!res.ok) continue;
       const html = await res.text();
-      const match = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-      if (match && match[1]) {
-        return match[1];
+      const matches = [...html.matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)];
+      const uniqueIds = [...new Set(matches.map(m => m[1]))];
+      if (uniqueIds.length > 0) {
+        return uniqueIds.slice(0, 6);
       }
     } catch (_) {}
   }
-  return null;
+  return [];
+}
+
+function normalizeStr(s) {
+  return (s || '').toLowerCase().split('(')[0].split('-')[0].replace(/[^a-z0-9\s]/g, '').trim();
+}
+
+function isExactSongMatch(candidate, targetTitle, targetArtist) {
+  const cTitle = normalizeStr(candidate.title);
+  const tTitle = normalizeStr(targetTitle);
+  if (!cTitle || !tTitle) return false;
+  const titleMatches = cTitle === tTitle || cTitle.includes(tTitle) || tTitle.includes(cTitle);
+
+  const primaryTargetArtist = normalizeStr((targetArtist || '').split(',')[0].split('&')[0]);
+  const cArtist = normalizeStr(candidate.artist);
+  const artistMatches = primaryTargetArtist && cArtist && (cArtist.includes(primaryTargetArtist) || primaryTargetArtist.includes(cArtist));
+
+  return Boolean(titleMatches && artistMatches);
 }
 
 // Format Seconds -> M:SS
@@ -213,22 +246,21 @@ async function loadTrack(index, autoPlay = true) {
   progressThumb.style.left = "0%";
   highlightActiveTrackInTables(track.id);
 
-  // Upgrade any Global Catalog track to a 100% Full-Length stream (Direct 320kbps or YouTube Full Audio)
+  // Upgrade any Global Catalog track to a verified 100% Full-Length stream
   if (track.needsFullResolve && !track.resolvedFull) {
     bufferingSpinner.style.display = 'block';
     try {
       const fullMatches = await fetchFullLengthTracks(`${track.title} ${track.artist}`);
-      const exactMatch = fullMatches.find(m =>
-        m.title.toLowerCase().includes(track.title.toLowerCase().split('(')[0].trim())
-      );
+      const exactMatch = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist));
       if (exactMatch && exactMatch.streamUrl) {
         track.streamUrl = exactMatch.streamUrl;
         track.duration = exactMatch.duration || track.duration;
         track.resolvedFull = true;
       } else if (ytPlayerReady) {
-        const videoId = await resolveYouTubeVideoId(`${track.title} ${track.artist} official audio`);
-        if (videoId) {
-          track.ytVideoId = videoId;
+        const videoIds = await resolveYouTubeVideoIds(`${track.title} ${track.artist} lyrics official audio`);
+        if (videoIds.length > 0) {
+          track.ytVideoId = videoIds[0];
+          track.ytCandidateIds = videoIds.slice(1);
           track.resolvedFull = true;
         }
       }
@@ -705,34 +737,6 @@ async function fetchFullLengthTracks(query) {
     }
   }
 
-  // Secondary Full-Length Source: Audius Open Music Network (with dynamic host discovery)
-  try {
-    let audiusHost = 'https://discoveryprovider.audius.co';
-    try {
-      const hostRes = await fetch('https://api.audius.co');
-      const hostJson = await hostRes.json();
-      if (hostJson?.data?.length > 0) audiusHost = hostJson.data[0];
-    } catch (_) {}
-
-    const audiusRes = await fetch(`${audiusHost}/v1/tracks/search?query=${q}&app_name=Spudaypay`);
-    if (audiusRes.ok) {
-      const audiusJson = await audiusRes.json();
-      if (audiusJson?.data?.length > 0) {
-        return audiusJson.data.slice(0, 20).map(item => ({
-          id: `audius-${item.id}`,
-          title: item.title,
-          artist: item.user?.name || "Artist",
-          album: item.genre || "Full Track",
-          duration: Number(item.duration) || 180,
-          cover: item.artwork?.['480x480'] || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&h=400&fit=crop',
-          streamUrl: `${audiusHost}/v1/tracks/${item.id}/stream?app_name=Spudaypay`
-        }));
-      }
-    }
-  } catch (e) {
-    console.warn("Audius search failed:", e);
-  }
-
   return [];
 }
 
@@ -749,12 +753,11 @@ async function performSearch(query) {
     t.album.toLowerCase().includes(query.toLowerCase())
   );
 
-  // 2. Fetch both Full-Length Catalog + Global Catalog in parallel so NO songs are ever missing
-  const [fullTracks, globalCatalogTracks] = await Promise.all([
-    fetchFullLengthTracks(query),
+  // 2. Fetch Official Global Catalog + Full-Length Catalog in parallel
+  const [globalCatalogTracks, fullTracks] = await Promise.all([
     (async () => {
       try {
-        const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=20`);
+        const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=25`);
         const data = await res.json();
         if (data.results) {
           return data.results.map(item => ({
@@ -770,16 +773,17 @@ async function performSearch(query) {
         }
       } catch (_) {}
       return [];
-    })()
+    })(),
+    fetchFullLengthTracks(query)
   ]);
 
   searchStatusBar.style.display = 'none';
 
-  // Deduplicate by title + artist (preferring already-resolved fullTracks first)
+  // Deduplicate by title + artist (putting official Global Catalog metadata first so titles/artists are 100% accurate)
   const seen = new Set();
   const combinedResults = [];
-  for (const t of [...localMatches, ...fullTracks, ...globalCatalogTracks]) {
-    const key = `${(t.title || '').toLowerCase().trim()}|${(t.artist || '').toLowerCase().trim()}`;
+  for (const t of [...localMatches, ...globalCatalogTracks, ...fullTracks]) {
+    const key = `${normalizeStr(t.title)}|${normalizeStr(t.artist)}`;
     if (!seen.has(key)) {
       seen.add(key);
       combinedResults.push(t);

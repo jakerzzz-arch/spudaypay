@@ -1,4 +1,4 @@
-const CACHE_NAME = 'spudaypay-music-v6';
+const CACHE_NAME = 'spudaypay-music-v7';
 const ASSETS = [
   './',
   './index.html',
