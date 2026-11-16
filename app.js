@@ -503,10 +503,15 @@ function decodeHtmlEntities(str) {
 }
 
 async function fetchFullLengthTracks(query) {
+  const q = encodeURIComponent(query);
   const endpoints = [
-    `https://saavn.dev/api/search/songs?query=${encodeURIComponent(query)}&limit=20`,
-    `https://saavn.sumit.co/api/search/songs?query=${encodeURIComponent(query)}&limit=20`,
-    `https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}&limit=20`
+    `/api/saavn/search/songs?query=${q}&limit=20`,
+    `/api/saavn2/search/songs?query=${q}&limit=20`,
+    `/api/saavn3/search/songs?query=${q}&limit=20`,
+    `https://saavn.dev/api/search/songs?query=${q}&limit=20`,
+    `https://saavn.sumit.co/api/search/songs?query=${q}&limit=20`,
+    `https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${q}&limit=20`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://saavn.dev/api/search/songs?query=${q}&limit=20`)}`
   ];
 
   for (const url of endpoints) {
@@ -520,23 +525,23 @@ async function fetchFullLengthTracks(query) {
           const dlList = item.downloadUrl || item.download_url || [];
           const bestAudio = Array.isArray(dlList) && dlList.length > 0
             ? (dlList[dlList.length - 1].url || dlList[dlList.length - 1].link)
-            : null;
+            : (typeof dlList === 'string' ? dlList : null);
           const imgList = item.image || [];
           const bestImg = Array.isArray(imgList) && imgList.length > 0
             ? (imgList[imgList.length - 1].url || imgList[imgList.length - 1].link)
-            : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&h=400&fit=crop';
+            : (typeof imgList === 'string' ? imgList : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&h=400&fit=crop');
           const artistStr = item.artists?.primary
             ? item.artists.primary.map(a => a.name).join(', ')
-            : (item.primaryArtists || item.subtitle || "Artist");
+            : (item.primaryArtists || item.artist || item.subtitle || "Artist");
 
           return {
             id: `full-${item.id}`,
             title: decodeHtmlEntities(item.name || item.title),
             artist: decodeHtmlEntities(artistStr),
-            album: decodeHtmlEntities(item.album?.name || item.name || "Single"),
+            album: decodeHtmlEntities(item.album?.name || item.album || item.name || "Full Track"),
             duration: Number(item.duration) || 210,
-            cover: bestImg,
-            streamUrl: bestAudio
+            cover: bestImg.replace(/^http:\/\//i, 'https://'),
+            streamUrl: bestAudio ? bestAudio.replace(/^http:\/\//i, 'https://') : null
           };
         }).filter(t => t.streamUrl);
 
@@ -547,25 +552,32 @@ async function fetchFullLengthTracks(query) {
     }
   }
 
-  // Secondary Full-Length Source: Audius Open Music Network
+  // Secondary Full-Length Source: Audius Open Music Network (with dynamic host discovery)
   try {
-    const audiusRes = await fetch(`https://discoveryprovider.audius.co/v1/tracks/search?query=${encodeURIComponent(query)}&app_name=Spudaypay`);
+    let audiusHost = 'https://discoveryprovider.audius.co';
+    try {
+      const hostRes = await fetch('https://api.audius.co');
+      const hostJson = await hostRes.json();
+      if (hostJson?.data?.length > 0) audiusHost = hostJson.data[0];
+    } catch (_) {}
+
+    const audiusRes = await fetch(`${audiusHost}/v1/tracks/search?query=${q}&app_name=Spudaypay`);
     if (audiusRes.ok) {
       const audiusJson = await audiusRes.json();
       if (audiusJson?.data?.length > 0) {
-        return audiusJson.data.slice(0, 15).map(item => ({
+        return audiusJson.data.slice(0, 20).map(item => ({
           id: `audius-${item.id}`,
           title: item.title,
-          artist: item.user?.name || "Independent Artist",
+          artist: item.user?.name || "Artist",
           album: item.genre || "Full Track",
           duration: Number(item.duration) || 180,
           cover: item.artwork?.['480x480'] || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&h=400&fit=crop',
-          streamUrl: `https://discoveryprovider.audius.co/v1/tracks/${item.id}/stream?app_name=Spudaypay`
+          streamUrl: `${audiusHost}/v1/tracks/${item.id}/stream?app_name=Spudaypay`
         }));
       }
     }
   } catch (e) {
-    console.warn("Audius fallback failed:", e);
+    console.warn("Audius search failed:", e);
   }
 
   return [];
@@ -584,35 +596,14 @@ async function performSearch(query) {
     t.album.toLowerCase().includes(query.toLowerCase())
   );
 
-  // 2. Search Full-Length 320kbps Global Catalog
-  let onlineTracks = await fetchFullLengthTracks(query);
-
-  // 3. Fallback to iTunes only if all full-track mirrors are offline
-  if (onlineTracks.length === 0) {
-    try {
-      const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=15`);
-      const data = await res.json();
-      if (data.results) {
-        onlineTracks = data.results.map(item => ({
-          id: `itunes-${item.trackId}`,
-          title: `${item.trackName} (30s Preview)`,
-          artist: item.artistName,
-          album: item.collectionName || item.trackName,
-          duration: 30,
-          cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '400x400bb') : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
-          streamUrl: item.previewUrl
-        }));
-      }
-    } catch (err) {
-      console.warn("Fallback search failed:", err);
-    }
-  }
+  // 2. Search Full-Length 320kbps Global Catalog (100% Full Songs Only)
+  const onlineTracks = await fetchFullLengthTracks(query);
 
   searchStatusBar.style.display = 'none';
 
   const combinedResults = [...localMatches, ...onlineTracks];
   if (combinedResults.length === 0) {
-    searchTableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 30px; color: var(--text-dim)">No matching tracks found. Try searching another song or artist.</td></tr>`;
+    searchTableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 30px; color: var(--text-dim)">No matching full-length tracks found. Try searching another song or artist.</td></tr>`;
     return;
   }
 
