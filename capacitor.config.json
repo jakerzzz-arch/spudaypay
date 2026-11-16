@@ -3,7 +3,7 @@
   "appName": "Spudaypay",
   "webDir": "www",
   "server": {
-    "androidScheme": "https",
+    "url": "https://preeminent-kitten-e39dfe.netlify.app",
     "cleartext": true
   }
 }

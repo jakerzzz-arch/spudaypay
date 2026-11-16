@@ -80,6 +80,10 @@ function updateGreeting() {
 }
 
 // Dual Audio Engine State ('html5' or 'yt')
+const API_BASE = (window.location.hostname === 'localhost' || window.location.protocol === 'capacitor:' || window.location.protocol === 'file:')
+  ? 'https://preeminent-kitten-e39dfe.netlify.app'
+  : '';
+
 let activeEngine = 'html5';
 let ytPlayer = null;
 let ytPlayerReady = false;
@@ -88,15 +92,16 @@ let ytProgressTimer = null;
 // Initialize YouTube IFrame Audio Engine
 window.onYouTubeIframeAPIReady = function () {
   ytPlayer = new YT.Player('ytPlayer', {
-    height: '1',
-    width: '1',
+    height: '200',
+    width: '200',
     playerVars: {
       autoplay: 0,
       controls: 0,
       disablekb: 1,
       fs: 0,
       modestbranding: 1,
-      playsinline: 1
+      playsinline: 1,
+      origin: window.location.origin
     },
     events: {
       onReady: () => {
@@ -177,7 +182,7 @@ function stopYtProgressLoop() {
 async function resolveYouTubeVideoIds(searchQuery) {
   const q = encodeURIComponent(searchQuery);
   const ytSearchUrls = [
-    `/api/yt/results?search_query=${q}`,
+    `${API_BASE}/api/yt/results?search_query=${q}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.youtube.com/results?search_query=${q}`)}`,
     `https://corsproxy.io/?${encodeURIComponent(`https://www.youtube.com/results?search_query=${q}`)}`
   ];
@@ -730,7 +735,7 @@ async function fetchFullLengthTracks(query) {
 
   // 1. Official JioSaavn Production API (with direct in-browser DES decryption)
   const officialUrls = [
-    `/api/jiosaavn/${officialApiPath}`,
+    `${API_BASE}/api/jiosaavn/${officialApiPath}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.jiosaavn.com/${officialApiPath}`)}`,
     `https://corsproxy.io/?${encodeURIComponent(`https://www.jiosaavn.com/${officialApiPath}`)}`
   ];
@@ -769,9 +774,9 @@ async function fetchFullLengthTracks(query) {
 
   // 2. Fallback Wrapper Mirrors
   const wrapperUrls = [
-    `/api/saavn/search/songs?query=${q}&limit=20`,
-    `/api/saavn2/search/songs?query=${q}&limit=20`,
-    `/api/saavn3/search/songs?query=${q}&limit=20`
+    `${API_BASE}/api/saavn/search/songs?query=${q}&limit=20`,
+    `${API_BASE}/api/saavn2/search/songs?query=${q}&limit=20`,
+    `${API_BASE}/api/saavn3/search/songs?query=${q}&limit=20`
   ];
 
   for (const url of wrapperUrls) {
