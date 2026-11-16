@@ -1,0 +1,11 @@
+{
+  "name": "spudaypay",
+  "version": "1.0.0",
+  "description": "Spudaypay Standalone Android Music Player App",
+  "private": true,
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0"
+  }
+}
