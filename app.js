@@ -10,6 +10,7 @@ let likedSongs = new Set();
 
 // DOM Elements
 const audio = document.getElementById('audioEngine');
+const bgAnchorAudio = document.getElementById('bgAnchorAudio');
 const btnPlayPause = document.getElementById('btnPlayPause');
 const iconPlay = document.getElementById('iconPlay');
 const iconPause = document.getElementById('iconPause');
@@ -146,16 +147,19 @@ window.onYouTubeIframeAPIReady = function () {
           const dur = ytPlayer.getDuration();
           if (dur > 0) totalDurationLabel.textContent = formatTime(dur);
           startYtProgressLoop();
+          updateMediaSessionState(true);
         } else if (event.data === YT.PlayerState.PAUSED) {
           isPlaying = false;
           iconPlay.style.display = 'block';
           iconPause.style.display = 'none';
           equalizerAnim.classList.remove('playing');
           stopYtProgressLoop();
+          updateMediaSessionState(false);
         } else if (event.data === YT.PlayerState.BUFFERING) {
           bufferingSpinner.style.display = 'block';
         } else if (event.data === YT.PlayerState.ENDED) {
           stopYtProgressLoop();
+          updateMediaSessionState(false);
           if (isRepeat) {
             ytPlayer.seekTo(0, true);
             ytPlayer.playVideo();
@@ -167,6 +171,19 @@ window.onYouTubeIframeAPIReady = function () {
     }
   });
 };
+
+function updateMediaSessionState(isPlayingState) {
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = isPlayingState ? 'playing' : 'paused';
+  }
+  if (bgAnchorAudio) {
+    if (isPlayingState) {
+      bgAnchorAudio.play().catch(() => {});
+    } else {
+      bgAnchorAudio.pause();
+    }
+  }
+}
 
 function startYtProgressLoop() {
   stopYtProgressLoop();
@@ -180,8 +197,18 @@ function startYtProgressLoop() {
       progressThumb.style.left = `${progress}%`;
       currentTimeLabel.textContent = formatTime(cur);
       totalDurationLabel.textContent = formatTime(dur);
+
+      if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: Math.max(1, dur),
+            playbackRate: 1,
+            position: Math.min(cur, dur)
+          });
+        } catch (_) {}
+      }
     }
-  }, 250);
+  }, 500);
 }
 
 function stopYtProgressLoop() {
@@ -294,14 +321,21 @@ async function loadTrack(index, autoPlay = true) {
     bufferingSpinner.style.display = 'none';
   }
 
-  // Setup Windows & Android Media Session
+  // Setup Windows & Android Media Session (Lockscreen & Notification Shade)
   if ('mediaSession' in navigator) {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: track.title,
       artist: track.artist,
-      album: track.album || "Spudaypay Hybrid",
-      artwork: [{ src: track.cover, sizes: '512x512', type: 'image/jpeg' }]
+      album: track.album || "Spudaypay",
+      artwork: [
+        { src: track.cover, sizes: '96x96', type: 'image/jpeg' },
+        { src: track.cover, sizes: '128x128', type: 'image/jpeg' },
+        { src: track.cover, sizes: '192x192', type: 'image/jpeg' },
+        { src: track.cover, sizes: '256x256', type: 'image/jpeg' },
+        { src: track.cover, sizes: '512x512', type: 'image/jpeg' }
+      ]
     });
+    navigator.mediaSession.playbackState = autoPlay ? 'playing' : 'paused';
   }
 
   if (track.ytVideoId) {
@@ -337,6 +371,7 @@ function playTrack() {
     iconPlay.style.display = 'none';
     iconPause.style.display = 'block';
     equalizerAnim.classList.add('playing');
+    updateMediaSessionState(true);
     return;
   }
   bufferingSpinner.style.display = 'block';
@@ -347,6 +382,7 @@ function playTrack() {
       iconPause.style.display = 'block';
       equalizerAnim.classList.add('playing');
       bufferingSpinner.style.display = 'none';
+      updateMediaSessionState(true);
     })
     .catch(err => {
       bufferingSpinner.style.display = 'none';
@@ -364,6 +400,7 @@ function pauseTrack() {
   iconPlay.style.display = 'block';
   iconPause.style.display = 'none';
   equalizerAnim.classList.remove('playing');
+  updateMediaSessionState(false);
 }
 
 function togglePlayPause() {
@@ -421,6 +458,16 @@ function setupAudioEvents() {
     progressBarFill.style.width = `${progress}%`;
     progressThumb.style.left = `${progress}%`;
     currentTimeLabel.textContent = formatTime(audio.currentTime);
+
+    if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: Math.max(1, audio.duration),
+          playbackRate: 1,
+          position: Math.min(audio.currentTime, audio.duration)
+        });
+      } catch (_) {}
+    }
   });
 
   audio.addEventListener('loadedmetadata', () => {
@@ -434,9 +481,15 @@ function setupAudioEvents() {
 
   audio.addEventListener('playing', () => {
     bufferingSpinner.style.display = 'none';
+    updateMediaSessionState(true);
+  });
+
+  audio.addEventListener('pause', () => {
+    updateMediaSessionState(false);
   });
 
   audio.addEventListener('ended', () => {
+    updateMediaSessionState(false);
     if (isRepeat) {
       audio.currentTime = 0;
       playTrack();

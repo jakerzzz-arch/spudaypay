@@ -12,5 +12,9 @@
       "*.doubleclick.net",
       "*.mzstatic.com"
     ]
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": false
   }
 }

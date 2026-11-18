@@ -16,6 +16,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    // Enable seamless background audio playback when switching apps or locking screen
+    try {
+      Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+      Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+      window.addEventListener('visibilitychange', (e) => e.stopImmediatePropagation(), true);
+      document.addEventListener('visibilitychange', (e) => e.stopImmediatePropagation(), true);
+    } catch (_) {}
+  </script>
 </head>
 <body>
   <div class="app-container">
@@ -304,6 +313,7 @@
 
   <!-- Hidden HTML5 & YouTube Full-Track Audio Engines -->
   <audio id="audioEngine" preload="auto"></audio>
+  <audio id="bgAnchorAudio" preload="auto" loop src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA"></audio>
   <div id="ytAudioContainer" style="position:fixed; bottom:0; right:0; width:2px; height:2px; opacity:0.01; pointer-events:none; z-index:-1; overflow:hidden;">
     <div id="ytPlayer"></div>
   </div>
@@ -314,7 +324,7 @@
   <!-- JavaScript Modules -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="music-data.js?v=14"></script>
-  <script src="app.js?v=14"></script>
+  <script src="music-data.js?v=15"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>
