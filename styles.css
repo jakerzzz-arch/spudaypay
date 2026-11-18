@@ -1324,3 +1324,61 @@ body {
   border-radius: 12px;
   margin-top: 4px;
 }
+
+.card-download-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 5;
+}
+
+.card-download-btn:hover {
+  background: var(--accent-green);
+  color: #000;
+  border-color: var(--accent-green);
+  transform: scale(1.1);
+}
+
+.card-download-btn.is-downloaded {
+  background: rgba(29, 185, 84, 0.35);
+  color: var(--accent-green);
+  border-color: var(--accent-green);
+}
+
+.card-delete-dl-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.3);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 5;
+}
+
+.card-delete-dl-btn:hover {
+  background: #ef4444;
+  color: #fff;
+  transform: scale(1.1);
+}
+

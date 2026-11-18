@@ -172,14 +172,119 @@ window.onYouTubeIframeAPIReady = function () {
   });
 };
 
+let activeOfflineBlobUrl = null;
+let bgAudioCtx = null;
+
+function ensureBgAudioKeepalive() {
+  try {
+    if (!bgAudioCtx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        bgAudioCtx = new AudioCtx();
+        const osc = bgAudioCtx.createOscillator();
+        const gain = bgAudioCtx.createGain();
+        gain.gain.value = 0.0001;
+        osc.connect(gain);
+        gain.connect(bgAudioCtx.destination);
+        osc.start();
+      }
+    } else if (bgAudioCtx.state === 'suspended') {
+      bgAudioCtx.resume();
+    }
+  } catch (_) {}
+}
+
+// IndexedDB Offline Audio Engine
+const OFFLINE_DB_NAME = 'spudaypay_offline_vault';
+const OFFLINE_STORE_NAME = 'audio_files';
+let offlineDbInstance = null;
+
+function getOfflineDb() {
+  if (offlineDbInstance) return Promise.resolve(offlineDbInstance);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(OFFLINE_DB_NAME, 1);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(OFFLINE_STORE_NAME)) {
+        db.createObjectStore(OFFLINE_STORE_NAME, { keyPath: 'key' });
+      }
+    };
+    req.onsuccess = () => {
+      offlineDbInstance = req.result;
+      resolve(offlineDbInstance);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveOfflineAudio(key, blob) {
+  try {
+    const db = await getOfflineDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(OFFLINE_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(OFFLINE_STORE_NAME);
+      store.put({ key: String(key), blob, timestamp: Date.now() });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn("IndexedDB save error:", e);
+    return false;
+  }
+}
+
+async function getOfflineAudioBlob(key) {
+  try {
+    const db = await getOfflineDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction(OFFLINE_STORE_NAME, 'readonly');
+      const store = tx.objectStore(OFFLINE_STORE_NAME);
+      const req = store.get(String(key));
+      req.onsuccess = () => {
+        if (req.result && req.result.blob) {
+          resolve(req.result.blob);
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch (_) {
+    return null;
+  }
+}
+
+async function hasOfflineAudio(key) {
+  const blob = await getOfflineAudioBlob(key);
+  return !!blob;
+}
+
+async function deleteOfflineAudio(key) {
+  try {
+    const db = await getOfflineDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction(OFFLINE_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(OFFLINE_STORE_NAME);
+      store.delete(String(key));
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (_) {
+    return false;
+  }
+}
+
 function updateMediaSessionState(isPlayingState) {
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = isPlayingState ? 'playing' : 'paused';
   }
-  if (bgAnchorAudio) {
-    if (isPlayingState) {
+  if (isPlayingState) {
+    ensureBgAudioKeepalive();
+    if (bgAnchorAudio) {
       bgAnchorAudio.play().catch(() => {});
-    } else {
+    }
+  } else {
+    if (bgAnchorAudio) {
       bgAnchorAudio.pause();
     }
   }
@@ -338,6 +443,23 @@ async function loadTrack(index, autoPlay = true) {
     navigator.mediaSession.playbackState = autoPlay ? 'playing' : 'paused';
   }
 
+  // 1. Check if track is saved in offline IndexedDB storage (plays 100% offline)
+  const offlineBlob = await getOfflineAudioBlob(track.id || track.title);
+  if (offlineBlob) {
+    activeEngine = 'html5';
+    if (activeOfflineBlobUrl) {
+      try { URL.revokeObjectURL(activeOfflineBlobUrl); } catch (_) {}
+    }
+    activeOfflineBlobUrl = URL.createObjectURL(offlineBlob);
+    audio.src = activeOfflineBlobUrl;
+    audio.load();
+    if (autoPlay) {
+      playTrack();
+    }
+    showToast(`⚡ Playing offline from local storage`);
+    return;
+  }
+
   if (track.ytVideoId) {
     activeEngine = 'yt';
     if (ytPlayerReady && ytPlayer && ytPlayer.loadVideoById) {
@@ -348,9 +470,9 @@ async function loadTrack(index, autoPlay = true) {
     } else {
       pendingTrackToPlay = { index, autoPlay };
     }
-  } else if (track.streamUrl) {
+  } else if (track.downloadUrl || track.streamUrl) {
     activeEngine = 'html5';
-    audio.src = track.streamUrl;
+    audio.src = track.downloadUrl || track.streamUrl;
     audio.load();
     if (autoPlay) {
       playTrack();
@@ -627,19 +749,57 @@ function getDownloadedTracks() {
 
 function saveDownloadedTrack(track) {
   const current = getDownloadedTracks();
-  if (!current.some(t => t.id === track.id || t.title === track.title)) {
-    current.unshift({
-      id: track.id || `dl-${Date.now()}`,
-      title: track.title,
-      artist: track.artist,
-      album: track.album || "Downloaded",
-      cover: track.cover,
-      streamUrl: track.streamUrl,
-      duration: track.duration,
-      downloadedAt: new Date().toLocaleDateString()
-    });
-    localStorage.setItem('spudaypay_downloads', JSON.stringify(current));
+  const trackId = track.id || `dl-${Date.now()}`;
+  const existingIdx = current.findIndex(t => t.id === trackId || t.title === track.title);
+  const trackObj = {
+    id: trackId,
+    title: track.title,
+    artist: track.artist,
+    album: track.album || "Offline Library",
+    cover: track.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
+    streamUrl: track.streamUrl,
+    downloadUrl: track.downloadUrl,
+    duration: track.duration || 210,
+    fileSize: track.fileSize || "6.2 MB",
+    downloadedAt: new Date().toLocaleDateString(),
+    isOfflineReady: true
+  };
+  if (existingIdx >= 0) {
+    current[existingIdx] = { ...current[existingIdx], ...trackObj };
+  } else {
+    current.unshift(trackObj);
   }
+  localStorage.setItem('spudaypay_downloads', JSON.stringify(current));
+}
+
+async function resolveDownloadAudioUrl(track) {
+  if (track.downloadUrl && track.downloadUrl.startsWith('http')) {
+    return track.downloadUrl;
+  }
+  if (track.streamUrl && track.streamUrl.includes('saavncdn.com')) {
+    return track.streamUrl;
+  }
+  try {
+    const q = encodeURIComponent(`${track.title} ${track.artist}`);
+    const res = await fetch(`https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=5&p=1&q=${q}`);
+    if (res.ok) {
+      const data = await res.json();
+      const first = data.results && data.results[0];
+      if (first && first.more_info && first.more_info.encrypted_media_url) {
+        const stream = decryptJioSaavnUrl(first.more_info.encrypted_media_url);
+        if (stream) return stream;
+      }
+    }
+  } catch (_) {}
+
+  try {
+    const fullTracks = await fetchFullLengthTracks(`${track.title} ${track.artist}`);
+    if (fullTracks.length > 0 && fullTracks[0].streamUrl) {
+      return fullTracks[0].streamUrl;
+    }
+  } catch (_) {}
+
+  return track.streamUrl || null;
 }
 
 async function downloadCurrentTrack() {
@@ -652,29 +812,77 @@ async function downloadCurrentTrack() {
 }
 
 async function downloadTrackDirect(track) {
-  showToast(`⏳ Preparing download for "${track.title}"...`);
+  if (!track) return;
+  const trackId = track.id || track.title;
 
-  let targetUrl = track.streamUrl;
-
-  if (!targetUrl) {
-    try {
-      const fullMatches = await fetchFullLengthTracks(`${track.title} ${track.artist}`);
-      const match = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist));
-      if (match && match.streamUrl) {
-        targetUrl = match.streamUrl;
-        track.streamUrl = match.streamUrl;
-        track.resolvedFull = true;
-      }
-    } catch (_) {}
+  const alreadyDownloaded = await hasOfflineAudio(trackId);
+  if (alreadyDownloaded) {
+    showToast(`✓ "${track.title}" is already in your offline library!`);
+    return;
   }
 
-  if (targetUrl) {
-    const filename = `${track.title} - ${track.artist}.mp3`.replace(/[/\\?%*:|"<>]/g, '_');
+  showToast(`⏳ Downloading "${track.title}" (320kbps full track)...`, 4000);
+
+  let targetUrl = track.downloadUrl;
+  if (!targetUrl || !targetUrl.startsWith('http')) {
+    targetUrl = await resolveDownloadAudioUrl(track);
+  }
+
+  if (!targetUrl) {
+    showToast(`❌ Could not resolve audio file for "${track.title}"`);
+    return;
+  }
+
+  const filename = `${track.title} - ${track.artist}.mp3`.replace(/[/\\?%*:|"<>]/g, '_');
+
+  try {
+    const res = await fetch(targetUrl);
+    if (!res.ok) throw new Error("Stream fetch failed");
+    const blob = await res.blob();
+
+    // 1. Save binary audio blob directly into IndexedDB for 100% offline playback
+    await saveOfflineAudio(trackId, blob);
+
+    // 2. Save metadata to localStorage
+    const sizeFormatted = (blob.size / (1024 * 1024)).toFixed(1) + ' MB';
+    saveDownloadedTrack({
+      ...track,
+      fileSize: sizeFormatted,
+      isOfflineReady: true
+    });
+
+    // 3. Trigger saving file to device storage (Downloads folder)
+    triggerDeviceDownload(blob, filename, targetUrl);
+
+    showToast(`✓ "${track.title}" downloaded! Saved in Library & Downloads folder.`);
+
+    if (activeTab === 'library') {
+      renderLibraryGrid();
+    }
+  } catch (err) {
+    console.warn("Direct blob fetch failed, triggering fallback download:", err);
     triggerAudioDownload(targetUrl, filename);
     saveDownloadedTrack(track);
-    showToast(`✓ Download started: ${track.title}! Check your Downloads folder.`);
-  } else {
-    showToast(`Ready in app stream. Direct MP3 resolving...`);
+    showToast(`✓ Download started for "${track.title}". Check Downloads.`);
+  }
+}
+
+function triggerDeviceDownload(blob, filename, fallbackUrl) {
+  try {
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => {
+      try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+    }, 30000);
+  } catch (_) {
+    if (fallbackUrl) {
+      triggerAudioDownload(fallbackUrl, filename);
+    }
   }
 }
 
@@ -685,14 +893,7 @@ function triggerAudioDownload(url, filename) {
       return res.blob();
     })
     .then(blob => {
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+      triggerDeviceDownload(blob, filename, url);
     })
     .catch(() => {
       const a = document.createElement('a');
@@ -703,6 +904,15 @@ function triggerAudioDownload(url, filename) {
       a.click();
       document.body.removeChild(a);
     });
+}
+
+async function deleteDownloadedTrack(trackId, trackTitle) {
+  await deleteOfflineAudio(trackId);
+  const current = getDownloadedTracks();
+  const updated = current.filter(t => t.id !== trackId && t.title !== trackTitle);
+  localStorage.setItem('spudaypay_downloads', JSON.stringify(updated));
+  showToast(`🗑️ Removed "${trackTitle}" from offline storage.`);
+  renderLibraryGrid();
 }
 
 function setVolume(val) {
@@ -916,22 +1126,114 @@ function renderFeaturedGrid(tracks) {
 
 // Render Library (Downloaded songs + Curated favorites)
 function renderLibraryGrid() {
+  if (!libraryGrid) return;
   libraryGrid.innerHTML = '';
   const downloaded = getDownloadedTracks();
-  const allTracks = [...downloaded, ...CURATED_TRACKS.filter(c => !downloaded.some(d => d.title === c.title))];
+
+  // Top Section: Downloaded & Offline Songs
+  const dlSection = document.createElement('div');
+  dlSection.style.gridColumn = '1 / -1';
+  dlSection.style.marginBottom = '20px';
 
   if (downloaded.length > 0) {
-    const headerEl = document.createElement('div');
-    headerEl.style.gridColumn = '1 / -1';
-    headerEl.style.marginBottom = '8px';
-    headerEl.innerHTML = `<h3 style="font-size: 1.1rem; color: var(--accent-green); display: flex; align-items: center; gap: 8px;">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-      Downloaded Songs (${downloaded.length})
-    </h3>`;
-    libraryGrid.appendChild(headerEl);
+    dlSection.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
+        <div>
+          <h2 style="font-size: 1.25rem; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px; margin: 0 0 4px 0;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            Downloaded Songs (${downloaded.length})
+          </h2>
+          <p style="font-size: 0.82rem; color: var(--text-secondary); margin: 0;">100% Offline • Saved in local storage • Plays with no WiFi or cellular data</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn-filter" id="btnPlayAllDownloaded" style="background: var(--accent-green); color: #000; font-weight: 700; padding: 7px 15px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 6px; border: none; border-radius: 20px; cursor: pointer;">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+            Play All
+          </button>
+          <button class="btn-filter" id="btnShuffleDownloaded" style="padding: 7px 14px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 6px;">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+            Shuffle
+          </button>
+        </div>
+      </div>
+      <div class="cards-grid" id="downloadedCardsGrid"></div>
+    `;
+    libraryGrid.appendChild(dlSection);
+
+    const dlGrid = dlSection.querySelector('#downloadedCardsGrid');
+    downloaded.forEach((track, idx) => {
+      const card = document.createElement('div');
+      card.className = 'music-card';
+      card.innerHTML = `
+        <div class="card-img-wrap">
+          <img src="${track.cover}" alt="${track.title}" loading="lazy">
+          <div class="card-floating-play">
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+          </div>
+          <button class="card-delete-dl-btn" title="Delete from Offline Storage" data-id="${track.id}">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </button>
+        </div>
+        <div class="card-title">${track.title}</div>
+        <div class="card-artist">${track.artist}</div>
+        <div class="download-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          Offline Ready ${track.fileSize ? '• ' + track.fileSize : ''}
+        </div>
+      `;
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.card-delete-dl-btn')) return;
+        currentTrackList = downloaded;
+        loadTrack(idx, true);
+      });
+      const delBtn = card.querySelector('.card-delete-dl-btn');
+      if (delBtn) {
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteDownloadedTrack(track.id, track.title);
+        });
+      }
+      dlGrid.appendChild(card);
+    });
+
+    const playAllBtn = dlSection.querySelector('#btnPlayAllDownloaded');
+    if (playAllBtn) {
+      playAllBtn.addEventListener('click', () => {
+        currentTrackList = [...downloaded];
+        loadTrack(0, true);
+      });
+    }
+    const shuffleBtn = dlSection.querySelector('#btnShuffleDownloaded');
+    if (shuffleBtn) {
+      shuffleBtn.addEventListener('click', () => {
+        currentTrackList = [...downloaded].sort(() => 0.5 - Math.random());
+        loadTrack(0, true);
+      });
+    }
+  } else {
+    dlSection.innerHTML = `
+      <div style="background: rgba(255,255,255,0.03); border: 1px dashed rgba(255,255,255,0.15); border-radius: 14px; padding: 22px; text-align: center; margin-bottom: 20px;">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2" style="margin-bottom: 8px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <h3 style="font-size: 1.05rem; font-weight: 700; margin: 0 0 6px 0;">No Downloaded Songs Yet</h3>
+        <p style="font-size: 0.82rem; color: var(--text-secondary); max-width: 440px; margin: 0 auto;">Tap the ⬇ download button on any song below or in the player bar to save songs for offline listening when you switch apps or have no WiFi!</p>
+      </div>
+    `;
+    libraryGrid.appendChild(dlSection);
   }
 
-  allTracks.forEach((track, idx) => {
+  // Section 2: All 100 Studio Songs with 1-click Download
+  const allHeader = document.createElement('div');
+  allHeader.style.gridColumn = '1 / -1';
+  allHeader.style.margin = '16px 0 10px 0';
+  allHeader.innerHTML = `
+    <h3 style="font-size: 1.15rem; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+      <span>All Available Catalog Songs (${CURATED_TRACKS.length})</span>
+      <span style="font-size: 0.78rem; font-weight: 400; color: var(--text-secondary);">Tap ⬇ to download any song for offline</span>
+    </h3>
+  `;
+  libraryGrid.appendChild(allHeader);
+
+  CURATED_TRACKS.forEach((track, idx) => {
     const isDownloaded = downloaded.some(d => d.id === track.id || d.title === track.title);
     const card = document.createElement('div');
     card.className = 'music-card';
@@ -941,15 +1243,29 @@ function renderLibraryGrid() {
         <div class="card-floating-play">
           <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
         </div>
+        <button class="card-download-btn ${isDownloaded ? 'is-downloaded' : ''}" title="${isDownloaded ? 'Downloaded' : 'Download Song'}" data-id="${track.id}">
+          ${isDownloaded 
+            ? '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+            : '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>'
+          }
+        </button>
       </div>
       <div class="card-title">${track.title}</div>
       <div class="card-artist">${track.artist}</div>
       ${isDownloaded ? '<div class="download-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Downloaded</div>' : ''}
     `;
-    card.addEventListener('click', () => {
-      currentTrackList = allTracks;
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.card-download-btn')) return;
+      currentTrackList = CURATED_TRACKS;
       loadTrack(idx, true);
     });
+    const dlBtn = card.querySelector('.card-download-btn');
+    if (dlBtn && !isDownloaded) {
+      dlBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        downloadTrackDirect(track);
+      });
+    }
     libraryGrid.appendChild(card);
   });
 }

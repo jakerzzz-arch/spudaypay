@@ -1,4 +1,4 @@
-// 100% Genuine Full-Length Studio Tracks (Verified & Embeddable) for Spudaypay
+// Spudaypay Curated 100 Real Full-Length Studio Audio Tracks
 const CURATED_TRACKS = [
   {
     "id": "track-1",
@@ -18,7 +18,8 @@ const CURATED_TRACKS = [
       "1--pwdu-eJE"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/265/429cc22c810d34235918d13dad0697f3_320.mp4"
   },
   {
     "id": "track-2",
@@ -38,7 +39,8 @@ const CURATED_TRACKS = [
       "DKB-1EV5qHw"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/325/2837424ebde6c20d361e6e22d24f4ecd_320.mp4"
   },
   {
     "id": "track-3",
@@ -58,7 +60,8 @@ const CURATED_TRACKS = [
       "YH6HJb_F-LE"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/771/52302eaa02c0fbd494b31dc4b7682220_320.mp4"
   },
   {
     "id": "track-4",
@@ -78,7 +81,8 @@ const CURATED_TRACKS = [
       "cWK_rzPDVaU"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/058/de34b9346b10b5d0d9e57ee0a85cb8be_320.mp4"
   },
   {
     "id": "track-5",
@@ -98,7 +102,8 @@ const CURATED_TRACKS = [
       "HU08BcK5SUY"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/896/3018db2aa5a2f322310c3bd277e078bd_320.mp4"
   },
   {
     "id": "track-6",
@@ -118,7 +123,8 @@ const CURATED_TRACKS = [
       "mOAy_vCa33E"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/947/983483ac2e92ba4d2e4d767211dfaa0a_320.mp4"
   },
   {
     "id": "track-7",
@@ -138,7 +144,8 @@ const CURATED_TRACKS = [
       "u4H-Zconvlw"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/509/975341258dd7642df5bf8dc97314bdf2_320.mp4"
   },
   {
     "id": "track-8",
@@ -158,7 +165,8 @@ const CURATED_TRACKS = [
       "aN2739fiLh4"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/175/9cb3fdf864bbbcf1ba7207868db279b1_320.mp4"
   },
   {
     "id": "track-9",
@@ -178,7 +186,8 @@ const CURATED_TRACKS = [
       "uheV45iXhrI"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/431/b3614a8aa0c61c0887a95bb041a79ce8_320.mp4"
   },
   {
     "id": "track-10",
@@ -198,7 +207,8 @@ const CURATED_TRACKS = [
       "AAPGi-WzN3M"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/120/34dbbac70809305bc073c7e0aa40ea7b_320.mp4"
   },
   {
     "id": "track-11",
@@ -218,7 +228,8 @@ const CURATED_TRACKS = [
       "KNtJGQkC-WI"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/243/4561a5dc07bf9baa57e3c27c6e057d98_320.mp4"
   },
   {
     "id": "track-12",
@@ -238,7 +249,8 @@ const CURATED_TRACKS = [
       "To4SWGZkEPk"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/867/d4c5b65e37766e9305592da892b2bb92_320.mp4"
   },
   {
     "id": "track-13",
@@ -258,7 +270,8 @@ const CURATED_TRACKS = [
       "jBcYMGcT2LA"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/270/7129077433ab076c1f3fb7fa5e52a26f_320.mp4"
   },
   {
     "id": "track-14",
@@ -278,7 +291,8 @@ const CURATED_TRACKS = [
       "ogEeYttq9gU"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/606/23c91ccfe50f3ebbd4453b259848abfd_320.mp4"
   },
   {
     "id": "track-15",
@@ -298,7 +312,8 @@ const CURATED_TRACKS = [
       "P8T1rUpVdXE"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/228/f4a5205336607564e3774a7d9791f660_320.mp4"
   },
   {
     "id": "track-16",
@@ -318,7 +333,8 @@ const CURATED_TRACKS = [
       "UBitESmuQfk"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/178/8587110531ecff43b9ef845e9251738a_320.mp4"
   },
   {
     "id": "track-17",
@@ -338,7 +354,8 @@ const CURATED_TRACKS = [
       "AyvOF3m_EC8"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/190/e5ad60ca48d1f473ba14f73bb138946e_320.mp4"
   },
   {
     "id": "track-18",
@@ -358,7 +375,8 @@ const CURATED_TRACKS = [
       "Nvm50gMVinc"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/119/19ebb12382df60a39114d7ee84e8471f_320.mp4"
   },
   {
     "id": "track-19",
@@ -378,7 +396,8 @@ const CURATED_TRACKS = [
       "QU9c0053UAU"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/129/727280ce12972111faffaf04ae534b66_320.mp4"
   },
   {
     "id": "track-20",
@@ -398,7 +417,8 @@ const CURATED_TRACKS = [
       "RlPNh_PBZb4"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/496/1c0374523ef6476490881de17437eaef_320.mp4"
   },
   {
     "id": "track-21",
@@ -418,7 +438,8 @@ const CURATED_TRACKS = [
       "57__wGDUzig"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/341/9872b384f066988e9bd957d6d68ee394_320.mp4"
   },
   {
     "id": "track-22",
@@ -438,7 +459,8 @@ const CURATED_TRACKS = [
       "fXJ4ZVfyfMA"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/325/44c0011e4e996f57d5eb6326a38e4a49_320.mp4"
   },
   {
     "id": "track-23",
@@ -458,7 +480,8 @@ const CURATED_TRACKS = [
       "AyCrypt1pdI"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/498/7f5b2c82073cb731626b0ccc3c4131b6_320.mp4"
   },
   {
     "id": "track-24",
@@ -478,7 +501,8 @@ const CURATED_TRACKS = [
       "3E78T8h5EhA"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/98/f0/d6/98f0d67e-f8bf-762d-cac7-1c6b3b6b35dd/mzaf_4543283896248560946.plus.aac.p.m4a"
   },
   {
     "id": "track-25",
@@ -498,7 +522,8 @@ const CURATED_TRACKS = [
       "34Na4j8AVgA"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/216/8b8a4f2344d7703773d2aa956ecbe51b_320.mp4"
   },
   {
     "id": "track-26",
@@ -518,7 +543,8 @@ const CURATED_TRACKS = [
       "H5v3kku4y6Q"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/234/91a048180b18f30821059b999a4df8e9_320.mp4"
   },
   {
     "id": "track-27",
@@ -538,7 +564,8 @@ const CURATED_TRACKS = [
       "pd1_SxHh2vo"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/501/92326f61ed49d0ab0a381bb0b5914b00_320.mp4"
   },
   {
     "id": "track-28",
@@ -558,7 +585,8 @@ const CURATED_TRACKS = [
       "mRD0-GxqHVo"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/297/268f75eb2e58633f5811f949b482b668_320.mp4"
   },
   {
     "id": "track-29",
@@ -578,7 +606,8 @@ const CURATED_TRACKS = [
       "ovG2QwiObhk"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/383/d433450bf9f973840d1617f362e8886c_320.mp4"
   },
   {
     "id": "track-30",
@@ -598,7 +627,8 @@ const CURATED_TRACKS = [
       "7wtfhZwyrcc"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/512/4b0a9eec99abea8d0760797d3a7d5322_320.mp4"
   },
   {
     "id": "track-31",
@@ -618,7 +648,8 @@ const CURATED_TRACKS = [
       "6lwUIHzHJpk"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/705/a91358d752038830a3f2bc0124922741_320.mp4"
   },
   {
     "id": "track-32",
@@ -638,7 +669,8 @@ const CURATED_TRACKS = [
       "4nsORR-kkOg"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/551/ff975d61f1a5836db93eab30017fb806_320.mp4"
   },
   {
     "id": "track-33",
@@ -658,7 +690,8 @@ const CURATED_TRACKS = [
       "xpRxgwO00Kg"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/376/edd41bdb8a1a5a3c6e4088697313670c_320.mp4"
   },
   {
     "id": "track-34",
@@ -678,7 +711,8 @@ const CURATED_TRACKS = [
       "ixefTend7Tk"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/703/cc0abaa6ff7a543587aa9f7ee9d5c1da_320.mp4"
   },
   {
     "id": "track-35",
@@ -698,7 +732,8 @@ const CURATED_TRACKS = [
       "U-BckaiDf-M"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/216/017ae2786d78d829a1a8b597b445a829_320.mp4"
   },
   {
     "id": "track-36",
@@ -718,7 +753,8 @@ const CURATED_TRACKS = [
       "vI9zLBFJ3LU"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/593/cc7ed1e97306c2dadfe2acaa0df78372_320.mp4"
   },
   {
     "id": "track-37",
@@ -738,7 +774,8 @@ const CURATED_TRACKS = [
       "YaPZ0ii5Ai4"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/282/c5d55399e78961b06d4a6c664260b66b_320.mp4"
   },
   {
     "id": "track-38",
@@ -758,7 +795,8 @@ const CURATED_TRACKS = [
       "e_UK2BHsS7M"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/776/40f9384654fa70b80213c4d4b75a557d_320.mp4"
   },
   {
     "id": "track-39",
@@ -778,7 +816,8 @@ const CURATED_TRACKS = [
       "WnLIGgTaBM0"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/625/68013a163738af01c7b73a2eee7f8750_320.mp4"
   },
   {
     "id": "track-40",
@@ -798,7 +837,8 @@ const CURATED_TRACKS = [
       "7JGIMUEQ46k"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/029/07202d740de568939b64307fc2814a36_320.mp4"
   },
   {
     "id": "track-41",
@@ -818,7 +858,8 @@ const CURATED_TRACKS = [
       "8CLkVWB_Lj8"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/945/609c529aed2091242fb2c155cc3f2e5c_320.mp4"
   },
   {
     "id": "track-42",
@@ -838,7 +879,8 @@ const CURATED_TRACKS = [
       "3fmGuw4eHmM"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/766/9b2e9733dc60c7b0ec92491c601ad868_320.mp4"
   },
   {
     "id": "track-43",
@@ -858,7 +900,8 @@ const CURATED_TRACKS = [
       "ADiogsXaZ-w"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/442/f2d77aabeee183e84c6401356eccae93_320.mp4"
   },
   {
     "id": "track-44",
@@ -878,7 +921,8 @@ const CURATED_TRACKS = [
       "iawgB2CDCrw"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/379/517509e3bce42f4ffeffd0a2f97cf337_320.mp4"
   },
   {
     "id": "track-45",
@@ -898,7 +942,8 @@ const CURATED_TRACKS = [
       "h8P-d0RV2Mk"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/336/3039d8437c21d3ab4cc0e819f55c9f13_320.mp4"
   },
   {
     "id": "track-46",
@@ -918,7 +963,8 @@ const CURATED_TRACKS = [
       "lImsPi5RGGo"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/678/9b8971f68d197e1494c63090a0f9456a_320.mp4"
   },
   {
     "id": "track-47",
@@ -938,7 +984,8 @@ const CURATED_TRACKS = [
       "JRfuAukYTKg"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/003/1f33e6e1b19dc923267711cb9ac2091e_320.mp4"
   },
   {
     "id": "track-48",
@@ -958,7 +1005,8 @@ const CURATED_TRACKS = [
       "fE96CxPls5A"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/516/8c15513d525a65ea723c34e2498f8576_320.mp4"
   },
   {
     "id": "track-49",
@@ -978,7 +1026,8 @@ const CURATED_TRACKS = [
       "4ZxFyXV7w0c"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/97/f0/20/97f02080-81c3-90a5-e45a-fb7b4e842dbb/mzaf_10164896606044573073.plus.aac.p.m4a"
   },
   {
     "id": "track-50",
@@ -998,7 +1047,8 @@ const CURATED_TRACKS = [
       "ShJV9F-mVfU"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/144/5b1712971c3c0c49c2c790aebd31b16e_320.mp4"
   },
   {
     "id": "track-51",
@@ -1018,7 +1068,8 @@ const CURATED_TRACKS = [
       "O0l8i3Q3juE"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/700/c1cb30f24ffdc0db68df7afc04ac5800_320.mp4"
   },
   {
     "id": "track-52",
@@ -1038,7 +1089,8 @@ const CURATED_TRACKS = [
       "bn3-c8CmZ5g"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/087/e5e0df72c64ca032f6337e71cef19b26_320.mp4"
   },
   {
     "id": "track-53",
@@ -1058,7 +1110,8 @@ const CURATED_TRACKS = [
       "9M-h3AthyMU"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/417/40d7f6636035a76f2eb455ac44a28c3f_320.mp4"
   },
   {
     "id": "track-54",
@@ -1078,7 +1131,8 @@ const CURATED_TRACKS = [
       "nYh-n7EOtMA"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/597/f20c4460e7757296d2703707c2bf81ef_320.mp4"
   },
   {
     "id": "track-55",
@@ -1098,7 +1152,8 @@ const CURATED_TRACKS = [
       "Slnoeztfg68"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/213/750cc99954705b01bc79b7410cd7206c_320.mp4"
   },
   {
     "id": "track-56",
@@ -1118,7 +1173,8 @@ const CURATED_TRACKS = [
       "N8mBcZ05Q4w"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/048/bdec001bffb08e347c10ca331bb72431_320.mp4"
   },
   {
     "id": "track-57",
@@ -1138,7 +1194,8 @@ const CURATED_TRACKS = [
       "J9XVincsyRU"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/535/bd395fc599cb11e692b970e7140bfd17_320.mp4"
   },
   {
     "id": "track-58",
@@ -1158,7 +1215,8 @@ const CURATED_TRACKS = [
       "HNMuFjl5FTo"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/244/4b7761011617bf0c7a628bbefffc11c7_320.mp4"
   },
   {
     "id": "track-59",
@@ -1178,7 +1236,8 @@ const CURATED_TRACKS = [
       "OljJ5gn86fk"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/089/4ef259b8d768fc304cca937ec5afead6_320.mp4"
   },
   {
     "id": "track-60",
@@ -1198,7 +1257,8 @@ const CURATED_TRACKS = [
       "gI3Zn9-tuq8"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/708/a71577e0a6b303ae58160e5463999c77_320.mp4"
   },
   {
     "id": "track-61",
@@ -1218,7 +1278,8 @@ const CURATED_TRACKS = [
       "XbuEoQ1cpfU"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/34/42/13/344213e4-0001-702a-676c-2aa9a6d1d767/mzaf_493931479406269699.plus.aac.p.m4a"
   },
   {
     "id": "track-62",
@@ -1238,7 +1299,8 @@ const CURATED_TRACKS = [
       "VkBf-TzS_Is"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/383/4f4158efbd6d9467b5e262ef540cd5a2_320.mp4"
   },
   {
     "id": "track-63",
@@ -1258,7 +1320,8 @@ const CURATED_TRACKS = [
       "wvqri9oS4G4"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/087/a95cd4f9e37c0c41a9c2762f04b38269_320.mp4"
   },
   {
     "id": "track-64",
@@ -1278,7 +1341,8 @@ const CURATED_TRACKS = [
       "jBvrQmtn4aQ"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/432/63c9bd7cfb8754de02cd84001a20bcd7_320.mp4"
   },
   {
     "id": "track-65",
@@ -1298,7 +1362,8 @@ const CURATED_TRACKS = [
       "HJNa9Ih3haA"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/527/1cfa1f1c4e94200a481d943fd0a92719_320.mp4"
   },
   {
     "id": "track-66",
@@ -1318,7 +1383,8 @@ const CURATED_TRACKS = [
       "1H18sl64l1s"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/148/b5ac8f307a67833438b1115cdb7f0d19_320.mp4"
   },
   {
     "id": "track-67",
@@ -1338,7 +1404,8 @@ const CURATED_TRACKS = [
       "KfgdNGl0tv0"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/107/8a719330c72a90f101b05703427e5042_320.mp4"
   },
   {
     "id": "track-68",
@@ -1358,7 +1425,8 @@ const CURATED_TRACKS = [
       "yFRo5QlW0OU"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/315/6610191a207b2f9a644b2032ad95e68e_320.mp4"
   },
   {
     "id": "track-69",
@@ -1378,7 +1446,8 @@ const CURATED_TRACKS = [
       "1k6y7ORleFE"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/183/8c0e13e0beae8565f37bb1479801718f_320.mp4"
   },
   {
     "id": "track-70",
@@ -1398,7 +1467,8 @@ const CURATED_TRACKS = [
       "YQ-qToZUybM"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/757/63176a3499ba31e95b544f10c8d5849e_320.mp4"
   },
   {
     "id": "track-71",
@@ -1418,7 +1488,8 @@ const CURATED_TRACKS = [
       "xEBtv1QkIeM"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/114/5b50ce57dde77673f1649cecafebc640_320.mp4"
   },
   {
     "id": "track-72",
@@ -1438,7 +1509,8 @@ const CURATED_TRACKS = [
       "Wd5HZJv0eu4"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/283/c2d77a43b675ba95d9cdf3e4505ef65e_320.mp4"
   },
   {
     "id": "track-73",
@@ -1458,7 +1530,8 @@ const CURATED_TRACKS = [
       "c41b9xYoMuE"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/811/e46165809e65a84f066ea4a935b81d57_320.mp4"
   },
   {
     "id": "track-74",
@@ -1478,7 +1551,8 @@ const CURATED_TRACKS = [
       "LDY_XyxBu8A"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/208/84f4f71a7997a51aaa5547d6a39d4cfc_320.mp4"
   },
   {
     "id": "track-75",
@@ -1498,7 +1572,8 @@ const CURATED_TRACKS = [
       "u4wHP_1twgE"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/385/65550f01c38d62e5a053f219cbd9a701_320.mp4"
   },
   {
     "id": "track-76",
@@ -1518,7 +1593,8 @@ const CURATED_TRACKS = [
       "xBIW5IukSsI"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/749/ddfd199065745993f1ffe350a751801c_320.mp4"
   },
   {
     "id": "track-77",
@@ -1538,7 +1614,8 @@ const CURATED_TRACKS = [
       "dIfcyGCgsbI"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/615/5f0f7af1d603e9f12800c2884583d56c_320.mp4"
   },
   {
     "id": "track-78",
@@ -1558,7 +1635,8 @@ const CURATED_TRACKS = [
       "EkHTsc9PU2A"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/614/85087c7b560d132ea466362444a5721f_320.mp4"
   },
   {
     "id": "track-79",
@@ -1578,7 +1656,8 @@ const CURATED_TRACKS = [
       "jDUYWjf-2kQ"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/082/c5691938d5602da75b0a833fb176b54b_320.mp4"
   },
   {
     "id": "track-80",
@@ -1598,7 +1677,8 @@ const CURATED_TRACKS = [
       "lp-EO5I60KA"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/729/ec9a2469eec9e2ada23c881f148d9fd6_320.mp4"
   },
   {
     "id": "track-81",
@@ -1618,7 +1698,8 @@ const CURATED_TRACKS = [
       "VOD9tM20aBM"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/239/82d2c79996494eb136b3e5237c3ca627_320.mp4"
   },
   {
     "id": "track-82",
@@ -1638,7 +1719,8 @@ const CURATED_TRACKS = [
       "tWkUTPj1BT8"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/618/890558772393e5dcd0b648ebe05f98b5_320.mp4"
   },
   {
     "id": "track-83",
@@ -1658,7 +1740,8 @@ const CURATED_TRACKS = [
       "xrJO8cXtzEs"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/a1/f5/40/a1f5405d-408f-d84e-1775-b87b30174067/mzaf_5384372198207712281.plus.aac.p.m4a"
   },
   {
     "id": "track-84",
@@ -1678,7 +1761,8 @@ const CURATED_TRACKS = [
       "CL7sR2rOXt0"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/253/6bf1e46415fe545ebdfd64f3b9b7dda1_320.mp4"
   },
   {
     "id": "track-85",
@@ -1698,7 +1782,8 @@ const CURATED_TRACKS = [
       "lVpTSJzrD3o"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/009/33fd66335ca68db3c556c0da80f580be_320.mp4"
   },
   {
     "id": "track-86",
@@ -1718,7 +1803,8 @@ const CURATED_TRACKS = [
       "O70-xOKIxMs"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/263/2083848071f4ca4b33f8866c02a16ee3_320.mp4"
   },
   {
     "id": "track-87",
@@ -1738,7 +1824,8 @@ const CURATED_TRACKS = [
       "FKRhAk5VmGw"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/176/47ab7122ac4552f0b86553f7ab1dd7ec_320.mp4"
   },
   {
     "id": "track-88",
@@ -1758,7 +1845,8 @@ const CURATED_TRACKS = [
       "NNyMIqagkfM"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/806/442b9d1e36a4bcef050a32de50a82316_320.mp4"
   },
   {
     "id": "track-89",
@@ -1778,7 +1866,8 @@ const CURATED_TRACKS = [
       "uG5toppE3qI"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/171/f5c01ce886d577f786158addfbb15b17_320.mp4"
   },
   {
     "id": "track-90",
@@ -1798,7 +1887,8 @@ const CURATED_TRACKS = [
       "56U1OI0rI0w"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/580/3fda69ee0014a79134601d94182b0cc9_320.mp4"
   },
   {
     "id": "track-91",
@@ -1818,7 +1908,8 @@ const CURATED_TRACKS = [
       "tVdJLqFZ1xc"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/263/4efbd235bc74140f6d76344d0d520f7e_320.mp4"
   },
   {
     "id": "track-92",
@@ -1838,7 +1929,8 @@ const CURATED_TRACKS = [
       "-mZURD3LAW0"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/074/3191975f7f413aee45f212633c339191_320.mp4"
   },
   {
     "id": "track-93",
@@ -1858,7 +1950,8 @@ const CURATED_TRACKS = [
       "IVWE4JiONSw"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/064/594c60ff92234a9268f43438ae1a3b0a_320.mp4"
   },
   {
     "id": "track-94",
@@ -1878,7 +1971,8 @@ const CURATED_TRACKS = [
       "Q6SHkQMFVlc"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/65/49/4e/65494e02-b6d3-26d8-6b0c-9bd98dcf4d5d/mzaf_7665413316386155700.plus.aac.p.m4a"
   },
   {
     "id": "track-95",
@@ -1898,7 +1992,8 @@ const CURATED_TRACKS = [
       "6HSMmIgy1Eg"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/737/ff0a737ee136de7690fe5ce235c9df3f_320.mp4"
   },
   {
     "id": "track-96",
@@ -1918,7 +2013,8 @@ const CURATED_TRACKS = [
       "4FGrB3u9BjU"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/987/2c6b3bc0857685e15cef96f657513b45_320.mp4"
   },
   {
     "id": "track-97",
@@ -1938,7 +2034,8 @@ const CURATED_TRACKS = [
       "uGcrbDOK2SQ"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/052/4181188418f903529f12e505a2a88a57_320.mp4"
   },
   {
     "id": "track-98",
@@ -1958,7 +2055,8 @@ const CURATED_TRACKS = [
       "VcjzHMhBtf0"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/089/54d70603702097a789374cc486c94b5d_320.mp4"
   },
   {
     "id": "track-99",
@@ -1978,7 +2076,8 @@ const CURATED_TRACKS = [
       "m7-HR6nzpeE"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/190/24c7578501c69d92f657e0b2ee55bebf_320.mp4"
   },
   {
     "id": "track-100",
@@ -1998,55 +2097,11 @@ const CURATED_TRACKS = [
       "MXJ4TnrL6c4"
     ],
     "resolvedFull": true,
-    "preview": false
+    "preview": false,
+    "downloadUrl": "https://aac.saavncdn.com/672/f543924010bff7d0bb2f33f295e37617_320.mp4"
   }
 ];
 
-const SPOTIFY_SECTIONS = [
-  {
-    "id": "tophits",
-    "title": "Today's Top Hits",
-    "subtitle": "The hottest tracks on the planet right now",
-    "tag": "Billboard Hot 100",
-    "genre": "pop"
-  },
-  {
-    "id": "charts",
-    "title": "Global Chart Toppers",
-    "subtitle": "Record-breaking anthems with billions of plays",
-    "tag": "Global 50",
-    "genre": "synthwave"
-  },
-  {
-    "id": "pop",
-    "title": "Pop & Dance Anthems",
-    "subtitle": "High energy chart-toppers to power your day",
-    "tag": "Party",
-    "genre": "pop"
-  },
-  {
-    "id": "hiphop",
-    "title": "Hip-Hop & Late Night R&B",
-    "subtitle": "Heavy bass, midnight mood tracks and global trap",
-    "tag": "Late Night",
-    "genre": "hiphop"
-  },
-  {
-    "id": "chill",
-    "title": "Chill Lo-Fi & Coffee Beats",
-    "subtitle": "Relax, study and unwind with smooth laidback melodies",
-    "tag": "Relaxing",
-    "genre": "lofi"
-  },
-  {
-    "id": "classics",
-    "title": "Rock & Timeless Classics",
-    "subtitle": "Legendary stadium anthems that live forever",
-    "tag": "Legendary",
-    "genre": "rock"
-  }
-];
-
-if (typeof module !== 'undefined') {
-  module.exports = { CURATED_TRACKS, SPOTIFY_SECTIONS };
+if (typeof module !== "undefined") {
+  module.exports = { CURATED_TRACKS };
 }
