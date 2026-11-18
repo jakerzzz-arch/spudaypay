@@ -915,6 +915,100 @@ async function deleteDownloadedTrack(trackId, trackTitle) {
   renderLibraryGrid();
 }
 
+// Batch "Download All Songs" Engine
+let isBatchDownloading = false;
+let cancelBatchDownload = false;
+
+function updateBatchDownloadUI(currentIdx, totalToDl, trackTitle, completedCount, totalCount) {
+  const currentNumEl = document.getElementById('batchDlCurrentNum');
+  const totalNumEl = document.getElementById('batchDlTotalNum');
+  const trackEl = document.getElementById('batchDlCurrentTrack');
+  const barEl = document.getElementById('batchDlProgressBar');
+
+  if (currentNumEl) currentNumEl.textContent = completedCount;
+  if (totalNumEl) totalNumEl.textContent = totalCount;
+  if (trackEl) trackEl.textContent = `Downloading: "${trackTitle}" (${currentIdx}/${totalToDl})...`;
+  if (barEl) {
+    const percent = Math.round((completedCount / totalCount) * 100);
+    barEl.style.width = `${percent}%`;
+  }
+}
+
+async function startDownloadAllSongs() {
+  if (isBatchDownloading) {
+    showToast("Batch download is already running.");
+    return;
+  }
+
+  const downloaded = getDownloadedTracks();
+  const toDownload = CURATED_TRACKS.filter(t => !downloaded.some(d => d.id === t.id || d.title === t.title));
+
+  if (toDownload.length === 0) {
+    showToast("✓ All 100 songs are already downloaded!");
+    return;
+  }
+
+  isBatchDownloading = true;
+  cancelBatchDownload = false;
+  renderLibraryGrid();
+
+  showToast(`🚀 Starting download of ${toDownload.length} songs for offline listening...`, 4000);
+
+  let completedCount = downloaded.length;
+  const totalCount = CURATED_TRACKS.length;
+
+  for (let i = 0; i < toDownload.length; i++) {
+    if (cancelBatchDownload) {
+      showToast("⏹ Batch download stopped.");
+      break;
+    }
+
+    const track = toDownload[i];
+    const trackId = track.id || track.title;
+
+    updateBatchDownloadUI(i + 1, toDownload.length, track.title, completedCount, totalCount);
+
+    try {
+      let targetUrl = track.downloadUrl;
+      if (!targetUrl || !targetUrl.startsWith('http')) {
+        targetUrl = await resolveDownloadAudioUrl(track);
+      }
+
+      if (targetUrl) {
+        const res = await fetch(targetUrl);
+        if (res.ok) {
+          const blob = await res.blob();
+          await saveOfflineAudio(trackId, blob);
+          const sizeFormatted = (blob.size / (1024 * 1024)).toFixed(1) + ' MB';
+          saveDownloadedTrack({
+            ...track,
+            fileSize: sizeFormatted,
+            isOfflineReady: true
+          });
+          completedCount++;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed downloading track in batch:", track.title, e);
+    }
+
+    // Small delay between tracks so network & storage remain responsive
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  isBatchDownloading = false;
+  cancelBatchDownload = false;
+  showToast(`✓ All set! ${completedCount}/${totalCount} songs ready for 100% offline playback.`);
+  renderLibraryGrid();
+}
+
+function stopDownloadAllSongs() {
+  cancelBatchDownload = true;
+  isBatchDownloading = false;
+  showToast("Cancelling batch download...");
+  renderLibraryGrid();
+}
+
 function setVolume(val) {
   audio.volume = val;
   if (ytPlayerReady && ytPlayer && ytPlayer.setVolume) {
@@ -1130,6 +1224,37 @@ function renderLibraryGrid() {
   libraryGrid.innerHTML = '';
   const downloaded = getDownloadedTracks();
 
+  // Active Batch Download Progress Banner
+  if (isBatchDownloading) {
+    const progressEl = document.createElement('div');
+    progressEl.style.gridColumn = '1 / -1';
+    progressEl.style.marginBottom = '20px';
+    const percent = Math.round((downloaded.length / CURATED_TRACKS.length) * 100);
+    progressEl.innerHTML = `
+      <div style="background: linear-gradient(135deg, rgba(29, 185, 84, 0.22), rgba(18, 18, 20, 0.95)); border: 1px solid var(--accent-green); border-radius: 14px; padding: 18px 20px; box-shadow: 0 4px 24px rgba(0,0,0,0.45);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div>
+            <div style="font-weight: 800; color: #fff; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
+              <span class="cover-overlay-spinner" style="display: inline-block; width: 16px; height: 16px; border-width: 2px;"></span>
+              Downloading Full Library (<span id="batchDlCurrentNum">${downloaded.length}</span> / <span id="batchDlTotalNum">${CURATED_TRACKS.length}</span>)
+            </div>
+            <div id="batchDlCurrentTrack" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 3px;">Saving songs to offline vault...</div>
+          </div>
+          <button id="btnCancelBatchDl" style="background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #ef4444; padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">Cancel</button>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 10px; height: 8px; overflow: hidden;">
+          <div id="batchDlProgressBar" style="background: var(--accent-green); height: 100%; width: ${percent}%; transition: width 0.3s ease;"></div>
+        </div>
+      </div>
+    `;
+    libraryGrid.appendChild(progressEl);
+
+    const cancelBtn = progressEl.querySelector('#btnCancelBatchDl');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', stopDownloadAllSongs);
+    }
+  }
+
   // Top Section: Downloaded & Offline Songs
   const dlSection = document.createElement('div');
   dlSection.style.gridColumn = '1 / -1';
@@ -1145,7 +1270,7 @@ function renderLibraryGrid() {
           </h2>
           <p style="font-size: 0.82rem; color: var(--text-secondary); margin: 0;">100% Offline • Saved in local storage • Plays with no WiFi or cellular data</p>
         </div>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button class="btn-filter" id="btnPlayAllDownloaded" style="background: var(--accent-green); color: #000; font-weight: 700; padding: 7px 15px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 6px; border: none; border-radius: 20px; cursor: pointer;">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
             Play All
@@ -1212,26 +1337,55 @@ function renderLibraryGrid() {
     }
   } else {
     dlSection.innerHTML = `
-      <div style="background: rgba(255,255,255,0.03); border: 1px dashed rgba(255,255,255,0.15); border-radius: 14px; padding: 22px; text-align: center; margin-bottom: 20px;">
+      <div style="background: rgba(255,255,255,0.03); border: 1px dashed rgba(255,255,255,0.15); border-radius: 14px; padding: 24px 20px; text-align: center; margin-bottom: 20px;">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2" style="margin-bottom: 8px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
         <h3 style="font-size: 1.05rem; font-weight: 700; margin: 0 0 6px 0;">No Downloaded Songs Yet</h3>
-        <p style="font-size: 0.82rem; color: var(--text-secondary); max-width: 440px; margin: 0 auto;">Tap the ⬇ download button on any song below or in the player bar to save songs for offline listening when you switch apps or have no WiFi!</p>
+        <p style="font-size: 0.82rem; color: var(--text-secondary); max-width: 440px; margin: 0 auto 12px auto;">Download songs to listen 100% offline without internet, and keep music playing while switching apps!</p>
+        <button class="btn-filter" id="btnEmptyDownloadAll" style="background: var(--accent-green); color: #000; font-weight: 700; padding: 8px 20px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 8px; border: none; border-radius: 24px; cursor: pointer;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Download All 100 Songs Offline
+        </button>
       </div>
     `;
     libraryGrid.appendChild(dlSection);
+
+    const emptyDlAllBtn = dlSection.querySelector('#btnEmptyDownloadAll');
+    if (emptyDlAllBtn) {
+      emptyDlAllBtn.addEventListener('click', startDownloadAllSongs);
+    }
   }
 
-  // Section 2: All 100 Studio Songs with 1-click Download
+  // Section 2: All 100 Studio Songs with 1-click Download & Download All Header
+  const remainingCount = CURATED_TRACKS.length - downloaded.length;
   const allHeader = document.createElement('div');
   allHeader.style.gridColumn = '1 / -1';
   allHeader.style.margin = '16px 0 10px 0';
   allHeader.innerHTML = `
-    <h3 style="font-size: 1.15rem; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
-      <span>All Available Catalog Songs (${CURATED_TRACKS.length})</span>
-      <span style="font-size: 0.78rem; font-weight: 400; color: var(--text-secondary);">Tap ⬇ to download any song for offline</span>
-    </h3>
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+      <div>
+        <h3 style="font-size: 1.15rem; font-weight: 700; color: #fff; margin: 0 0 3px 0;">All Catalog Songs (${CURATED_TRACKS.length})</h3>
+        <p style="font-size: 0.78rem; color: var(--text-secondary); margin: 0;">Tap ⬇ on any card, or download all for offline playback</p>
+      </div>
+      <div>
+        ${remainingCount > 0
+          ? `<button class="btn-filter" id="btnDownloadAllCatalog" style="background: var(--accent-green); color: #000; font-weight: 700; padding: 7px 16px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 6px; border: none; border-radius: 20px; cursor: pointer;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Download All (${remainingCount} left)
+            </button>`
+          : `<div style="display: inline-flex; align-items: center; gap: 6px; color: var(--accent-green); font-size: 0.82rem; font-weight: 700; background: rgba(29, 185, 84, 0.15); padding: 5px 12px; border-radius: 20px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              All 100 Downloaded
+            </div>`
+        }
+      </div>
+    </div>
   `;
   libraryGrid.appendChild(allHeader);
+
+  const dlAllBtn = allHeader.querySelector('#btnDownloadAllCatalog');
+  if (dlAllBtn) {
+    dlAllBtn.addEventListener('click', startDownloadAllSongs);
+  }
 
   CURATED_TRACKS.forEach((track, idx) => {
     const isDownloaded = downloaded.some(d => d.id === track.id || d.title === track.title);
