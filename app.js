@@ -89,9 +89,14 @@ let activeEngine = 'html5';
 let ytPlayer = null;
 let ytPlayerReady = false;
 let ytProgressTimer = null;
+let pendingTrackToPlay = null;
 
 // Initialize YouTube IFrame Audio Engine
 window.onYouTubeIframeAPIReady = function () {
+  const safeOrigin = (window.location.origin && window.location.origin.startsWith('http') && !window.location.origin.includes('localhost'))
+    ? window.location.origin
+    : 'https://www.youtube.com';
+
   ytPlayer = new YT.Player('ytPlayer', {
     height: '200',
     width: '200',
@@ -102,15 +107,21 @@ window.onYouTubeIframeAPIReady = function () {
       fs: 0,
       modestbranding: 1,
       playsinline: 1,
-      origin: window.location.origin
+      origin: safeOrigin
     },
     events: {
       onReady: () => {
         ytPlayerReady = true;
         ytPlayer.setVolume(Math.round((previousVolume || 0.8) * 100));
+        if (pendingTrackToPlay) {
+          const p = pendingTrackToPlay;
+          pendingTrackToPlay = null;
+          loadTrack(p.index, p.autoPlay);
+        }
       },
-      onError: () => {
-        // If a VEVO video blocks embedding (error 101/150), automatically try the next matching videoId
+      onError: (e) => {
+        console.warn("YouTube player error:", e.data);
+        // If a video blocks embedding (error 101/150), automatically try the next candidate videoId
         const track = currentTrackList[currentTrackIndex];
         if (track && Array.isArray(track.ytCandidateIds) && track.ytCandidateIds.length > 0) {
           const nextId = track.ytCandidateIds.shift();
@@ -293,11 +304,15 @@ async function loadTrack(index, autoPlay = true) {
     });
   }
 
-  if (track.ytVideoId && ytPlayerReady) {
+  if (track.ytVideoId) {
     activeEngine = 'yt';
-    ytPlayer.loadVideoById(track.ytVideoId);
-    if (!autoPlay) {
-      ytPlayer.pauseVideo();
+    if (ytPlayerReady && ytPlayer && ytPlayer.loadVideoById) {
+      ytPlayer.loadVideoById(track.ytVideoId);
+      if (!autoPlay) {
+        ytPlayer.pauseVideo();
+      }
+    } else {
+      pendingTrackToPlay = { index, autoPlay };
     }
   } else if (track.streamUrl) {
     activeEngine = 'html5';
@@ -316,8 +331,12 @@ function playTrack() {
     loadTrack(currentTrackIndex, true);
     return;
   }
-  if (activeEngine === 'yt' && ytPlayerReady) {
+  if (activeEngine === 'yt' && ytPlayerReady && ytPlayer && ytPlayer.playVideo) {
     ytPlayer.playVideo();
+    isPlaying = true;
+    iconPlay.style.display = 'none';
+    iconPause.style.display = 'block';
+    equalizerAnim.classList.add('playing');
     return;
   }
   bufferingSpinner.style.display = 'block';
@@ -336,7 +355,7 @@ function playTrack() {
 }
 
 function pauseTrack() {
-  if (activeEngine === 'yt' && ytPlayerReady) {
+  if (activeEngine === 'yt' && ytPlayerReady && ytPlayer && ytPlayer.pauseVideo) {
     ytPlayer.pauseVideo();
   } else {
     audio.pause();
@@ -357,7 +376,7 @@ function togglePlayPause() {
 
 function playNextTrack() {
   if (isShuffled) {
-    const pool = (currentTrackList.length > 3) ? currentTrackList : CURATED_TRACKS;
+    const pool = (CURATED_TRACKS && CURATED_TRACKS.length > 0) ? CURATED_TRACKS : currentTrackList;
     currentTrackList = pool;
     let nextIndex;
     do {
@@ -367,14 +386,23 @@ function playNextTrack() {
   } else {
     let nextIndex = currentTrackIndex + 1;
     if (nextIndex >= currentTrackList.length) {
-      nextIndex = isRepeat ? 0 : 0;
+      nextIndex = 0;
+      if (!isRepeat) {
+        pauseTrack();
+        return;
+      }
     }
     loadTrack(nextIndex, true);
   }
 }
 
 function playPrevTrack() {
-  if (audio.currentTime > 3) {
+  if (activeEngine === 'yt' && ytPlayerReady && ytPlayer && ytPlayer.getCurrentTime) {
+    if (ytPlayer.getCurrentTime() > 3) {
+      ytPlayer.seekTo(0, true);
+      return;
+    }
+  } else if (audio.currentTime > 3) {
     audio.currentTime = 0;
     return;
   }
@@ -424,8 +452,12 @@ function setupAudioEvents() {
     navigator.mediaSession.setActionHandler('previoustrack', playPrevTrack);
     navigator.mediaSession.setActionHandler('nexttrack', playNextTrack);
     navigator.mediaSession.setActionHandler('seekto', (details) => {
-      if (details.seekTime && audio.duration) {
-        audio.currentTime = details.seekTime;
+      if (details.seekTime !== undefined) {
+        if (activeEngine === 'yt' && ytPlayerReady && ytPlayer && ytPlayer.seekTo) {
+          ytPlayer.seekTo(details.seekTime, true);
+        } else if (audio.duration) {
+          audio.currentTime = details.seekTime;
+        }
       }
     });
   }
@@ -441,7 +473,11 @@ function setupControls() {
     isShuffled = !isShuffled;
     btnShuffle.classList.toggle('active', isShuffled);
     if (isShuffled) {
+      currentTrackList = [...CURATED_TRACKS];
       shuffleHomeScreenSamples();
+      showToast("🔀 Shuffle enabled: playing all 100 songs!");
+    } else {
+      showToast("▶ Shuffle disabled");
     }
   });
 
@@ -507,48 +543,12 @@ const GLOBAL_DISCOVERY_QUERIES = [
 ];
 
 async function playSurpriseTrack() {
-  showToast("🎲 Exploring global hits...");
-  // 50% chance: pick from local curated catalog
-  // 50% chance: query live global online catalog for a fresh hit
-  const useOnlineDiscovery = Math.random() > 0.45;
-  if (useOnlineDiscovery) {
-    const randomQuery = GLOBAL_DISCOVERY_QUERIES[Math.floor(Math.random() * GLOBAL_DISCOVERY_QUERIES.length)];
-    try {
-      bufferingSpinner.style.display = 'block';
-      const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(randomQuery)}&entity=song&limit=25`);
-      const data = await res.json();
-      bufferingSpinner.style.display = 'none';
-      const validResults = (data.results || []).filter(item =>
-        item.previewUrl &&
-        !/karaoke|instrumental|tribute|sped up|slowed|8d|lullaby|cover/i.test(item.trackName)
-      );
-      if (validResults.length > 0) {
-        const item = validResults[Math.floor(Math.random() * validResults.length)];
-        const picked = {
-          id: `global-${item.trackId}`,
-          title: item.trackName,
-          artist: item.artistName,
-          album: item.collectionName || item.trackName,
-          duration: 30,
-          cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '600x600bb') : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&h=500&fit=crop',
-          streamUrl: item.previewUrl,
-          resolvedFull: true
-        };
-        currentTrackList.unshift(picked);
-        loadTrack(0, true);
-        showToast(`🎲 Discovered: ${picked.title} - ${picked.artist}`);
-        return;
-      }
-    } catch (_) {
-      bufferingSpinner.style.display = 'none';
-    }
-  }
-
+  if (CURATED_TRACKS.length === 0) return;
   const randomIdx = Math.floor(Math.random() * CURATED_TRACKS.length);
   currentTrackList = [...CURATED_TRACKS];
   loadTrack(randomIdx, true);
   shuffleHomeScreenSamples();
-  showToast(`🎲 Playing: ${CURATED_TRACKS[randomIdx].title}`);
+  showToast(`🎲 Playing: ${CURATED_TRACKS[randomIdx].title} - ${CURATED_TRACKS[randomIdx].artist}`);
 }
 
 // Download & Offline Storage Functions
@@ -769,8 +769,9 @@ function renderQuickPicks(customList = null) {
       </div>
     `;
     card.addEventListener('click', () => {
-      currentTrackList = list;
-      loadTrack(idx, true);
+      currentTrackList = [...CURATED_TRACKS];
+      const targetIdx = currentTrackList.findIndex(t => t.id === track.id);
+      loadTrack(targetIdx >= 0 ? targetIdx : idx, true);
     });
     quickPicksGrid.appendChild(card);
   });
@@ -1096,10 +1097,11 @@ async function performSearch(query) {
         title: item.trackName,
         artist: item.artistName,
         album: item.collectionName || item.trackName,
-        duration: 30,
+        duration: item.trackTimeMillis ? Math.round(item.trackTimeMillis / 1000) : 210,
         cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '600x600bb') : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
         streamUrl: item.previewUrl,
-        resolvedFull: true
+        needsFullResolve: true,
+        resolvedFull: false
       }));
     }
   } catch (_) {}

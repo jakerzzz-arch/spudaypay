@@ -4,6 +4,13 @@
   "webDir": "www",
   "server": {
     "androidScheme": "https",
-    "cleartext": true
+    "cleartext": true,
+    "allowNavigation": [
+      "*.youtube.com",
+      "*.googlevideo.com",
+      "*.ytimg.com",
+      "*.doubleclick.net",
+      "*.mzstatic.com"
+    ]
   }
 }

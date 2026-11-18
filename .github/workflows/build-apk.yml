@@ -29,7 +29,6 @@ jobs:
       - name: Install Dependencies & Prepare Assets
         run: |
           npm install
-          node fill-missing-28.js || true
           mkdir -p www
           cp -r index.html styles.css app.js music-data.js manifest.json sw.js icon.svg icon-192.png icon-512.png www/
 
