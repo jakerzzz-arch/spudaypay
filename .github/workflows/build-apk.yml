@@ -42,23 +42,20 @@ jobs:
             if (fs.existsSync(wvPath)) {
               let src = fs.readFileSync(wvPath, "utf8");
               if (!src.includes("onWindowVisibilityChanged")) {
-                const patch = `
-    @Override
-    protected void onWindowVisibilityChanged(int visibility) {
-        super.onWindowVisibilityChanged(android.view.View.VISIBLE);
-    }
-
-    @Override
-    protected void onVisibilityChanged(android.view.View changedView, int visibility) {
-        super.onVisibilityChanged(changedView, android.view.View.VISIBLE);
-    }
-
-    @Override
-    public void onPause() {
-        // Keep HTML5 audio and timers active when switching apps
-    }
-}
-`;
+                const patch = [
+                  "    @Override",
+                  "    protected void onWindowVisibilityChanged(int visibility) {",
+                  "        super.onWindowVisibilityChanged(android.view.View.VISIBLE);",
+                  "    }",
+                  "    @Override",
+                  "    protected void onVisibilityChanged(android.view.View changedView, int visibility) {",
+                  "        super.onVisibilityChanged(changedView, android.view.View.VISIBLE);",
+                  "    }",
+                  "    @Override",
+                  "    public void onPause() {",
+                  "    }",
+                  "}"
+                ].join("\n");
                 src = src.replace(/\}\s*$/, patch);
                 fs.writeFileSync(wvPath, src, "utf8");
                 console.log("Patched CapacitorWebView for nonstop background playback");
