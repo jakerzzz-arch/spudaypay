@@ -1,4 +1,4 @@
-const CACHE_NAME = 'spudaypay-network-first-v20';
+const CACHE_NAME = 'spudaypay-network-first-v21';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

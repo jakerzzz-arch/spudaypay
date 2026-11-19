@@ -71,12 +71,16 @@ const localFileInput = document.getElementById('localFileInput');
 document.addEventListener('DOMContentLoaded', () => {
   // Purge any old 30-second preview or mismatched downloads from previous versions
   try {
-    if (localStorage.getItem('spudaypay_vault_v20') !== 'true') {
+    if (localStorage.getItem('spudaypay_vault_v21') !== 'true') {
       localStorage.removeItem('spudaypay_downloads');
       try { indexedDB.deleteDatabase('spudaypay_offline_vault'); } catch (_) {}
-      localStorage.setItem('spudaypay_vault_v20', 'true');
+      localStorage.setItem('spudaypay_vault_v21', 'true');
     }
   } catch (_) {}
+
+  window.addEventListener('scroll', () => {
+    if (window.scrollX !== 0) window.scrollTo(0, window.scrollY);
+  }, { passive: true });
 
   try { setupNavigation(); } catch (e) { console.error("Navigation setup error:", e); }
   try { setupAudioEvents(); } catch (e) { console.error("Audio events setup error:", e); }

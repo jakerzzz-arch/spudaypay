@@ -1,5 +1,4 @@
 node_modules/
-audio/
 yt-dlp.exe
 ffmpeg.exe
 ffmpeg.zip
@@ -11,3 +10,5 @@ rebuild-verified-music-data.js
 dl-top-30.js
 verify-100-full-downloads.js
 strict-verified-map.json
+dl-all-remaining.js
+test-audio-apis.js

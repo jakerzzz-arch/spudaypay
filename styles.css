@@ -259,9 +259,13 @@ html, body {
 /* Main Content Area */
 .main-content {
   flex: 1;
+  min-width: 0;
+  width: 100%;
+  max-width: 100vw;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overflow-x: hidden;
   background: radial-gradient(circle at 50% 0%, #1e1e2d 0%, var(--bg-base) 60%);
 }
 
@@ -1080,19 +1084,35 @@ html, body {
   }
 
   .top-header {
-    padding: 0 14px;
+    padding: 0 12px;
     height: 58px;
-    gap: 10px;
+    gap: 8px;
+    width: 100%;
+    max-width: 100vw;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .header-left {
     flex: 1;
+    min-width: 0;
   }
 
   .search-bar-container {
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
     height: 38px;
     padding: 0 12px;
+  }
+
+  .search-bar-container input {
+    min-width: 0;
+  }
+
+  .header-right {
+    flex-shrink: 0;
+    gap: 8px;
   }
 
   .badge-btn:not(#btnDownloadApk) span {
@@ -1104,22 +1124,34 @@ html, body {
   }
 
   .view-viewport {
-    padding: 16px 14px 160px;
+    padding: 14px 12px 160px;
+    width: 100%;
+    max-width: 100vw;
+    min-width: 0;
     overflow-x: hidden !important;
     touch-action: pan-y;
   }
 
   .greeting-banner h1 {
-    font-size: 1.45rem;
+    font-size: 1.35rem;
+  }
+
+  .greeting-banner .subtitle {
+    font-size: 0.85rem;
+    word-wrap: break-word;
   }
 
   .mobile-genre-chips {
     display: flex;
     justify-content: flex-start;
     align-items: center;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
     max-width: 100%;
-    touch-action: pan-x;
+    overflow-x: hidden;
+    padding-bottom: 4px;
+    margin-bottom: 14px;
   }
 
   .mobile-genre-chips .playlist-pill {
@@ -1128,8 +1160,8 @@ html, body {
     background-color: rgba(255, 255, 255, 0.07);
     border: 1px solid var(--border-color);
     border-radius: 20px;
-    padding: 6px 14px;
-    font-size: 0.8rem;
+    padding: 5px 11px;
+    font-size: 0.76rem;
   }
 
   .mobile-genre-chips .playlist-pill.active {
@@ -1198,6 +1230,18 @@ html, body {
     font-size: 1.8rem;
   }
 
+  .track-table-container {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .track-table {
+    table-layout: fixed;
+    width: 100%;
+    max-width: 100%;
+  }
+
   .track-table th:nth-child(3),
   .track-table td:nth-child(3),
   .track-table th:nth-child(5),
@@ -1206,19 +1250,20 @@ html, body {
   }
 
   .table-title {
-    max-width: 170px;
+    max-width: 145px;
   }
 
   /* Floating Mobile Mini-Player */
   .player-bar {
     height: 76px;
-    padding: 6px 12px;
+    padding: 6px 10px;
     margin: 0 8px;
     border-radius: 12px;
     background-color: #181822;
     border: 1px solid rgba(255, 255, 255, 0.12);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow: hidden;
     position: fixed;
     bottom: 64px;
     left: 0;
@@ -1228,28 +1273,31 @@ html, body {
   .player-left {
     width: auto;
     flex: 1;
-    gap: 10px;
+    gap: 8px;
     min-width: 0;
   }
 
   .player-cover-box {
-    width: 44px;
-    height: 44px;
+    width: 42px;
+    height: 42px;
     flex-shrink: 0;
   }
 
   .player-meta {
-    max-width: 140px;
+    flex: 1;
+    min-width: 0;
+    max-width: none;
   }
 
   .player-center {
     width: auto;
+    flex-shrink: 0;
     flex-direction: row;
-    gap: 6px;
+    gap: 4px;
   }
 
   .player-controls {
-    gap: 8px;
+    gap: 6px;
   }
 
   #btnShuffle,
