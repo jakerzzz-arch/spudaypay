@@ -6,11 +6,17 @@
     "androidScheme": "https",
     "cleartext": true,
     "allowNavigation": [
+      "*",
+      "*.netlify.app",
+      "*.apple.com",
+      "*.mzstatic.com",
       "*.youtube.com",
       "*.googlevideo.com",
       "*.ytimg.com",
       "*.doubleclick.net",
-      "*.mzstatic.com"
+      "*.jiosaavn.com",
+      "*.saavn.com",
+      "*.jio.com"
     ]
   },
   "android": {
