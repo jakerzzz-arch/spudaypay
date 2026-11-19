@@ -272,10 +272,31 @@ async function tryNextPlaybackSource(track) {
     return;
   }
 
+  // 5. If full-length sources failed but official preview is available, fallback gracefully
+  if (track.fallbackPreviewUrl && audio.src !== track.fallbackPreviewUrl) {
+    activeEngine = 'html5';
+    if (ytPlayerReady && ytPlayer && ytPlayer.stopVideo) {
+      try { ytPlayer.stopVideo(); } catch (_) {}
+    }
+    audio.src = track.fallbackPreviewUrl;
+    if (!userPaused) {
+      audio.play().then(() => {
+        setBufferingState(false);
+        syncPlayPauseUI(true);
+        showToast(`ℹ️ Full song unavailable on streaming catalogs. Playing official 30s preview.`, 4000);
+      }).catch(() => {
+        setBufferingState(false);
+        syncPlayPauseUI(false);
+        showToast(`⚠️ "${track.title}" by ${track.artist} is currently unavailable from verified sources.`, 3500);
+      });
+    }
+    return;
+  }
+
   setBufferingState(false);
   syncPlayPauseUI(false);
   if (!userPaused) {
-    showToast(`⚠️ "${track.title}" by ${track.artist} is currently unavailable from verified audio sources.`, 3500);
+    showToast(`⚠️ "${track.title}" by ${track.artist} is currently unavailable from verified sources.`, 3500);
   }
 }
 
@@ -587,6 +608,13 @@ function isPrimaryArtistMatch(candidateArtistStr, targetArtistStr) {
     const escapedCand = candPrimary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (new RegExp(`\\b${escapedCand}\\b`, 'i').test(targetFull)) return true;
   }
+
+  // Handle compact artist handles (e.g. "idkgreek" includes "greek", "billieeilish" includes "billie eilish")
+  const targetCompact = targetPrimary.replace(/\s+/g, '');
+  const candCompact = candPrimary.replace(/\s+/g, '');
+  if (targetCompact.length >= 4 && candCompact.includes(targetCompact)) return true;
+  if (candCompact.length >= 4 && targetCompact.includes(candCompact)) return true;
+
   return false;
 }
 
@@ -650,8 +678,24 @@ function parseYouTubeSearchCandidates(html, trackTitle = '', trackArtist = '', t
 
     if (trackTitle && hasMismatchedVersionTag(trackTitle, rawTitle, channel)) continue;
 
+    let durationSec = 0;
     const lenMatch = slice.match(/"lengthText":\{.*?"simpleText":"([0-9:]+)"/);
-    const durationSec = lenMatch ? parseDurationToSeconds(lenMatch[1]) : 0;
+    if (lenMatch) {
+      durationSec = parseDurationToSeconds(lenMatch[1]);
+    } else {
+      const labelMatch = slice.match(/"accessibilityData":\{"label":"([^"]+)"\}/);
+      if (labelMatch) {
+        const txt = labelMatch[1];
+        const minM = txt.match(/(\d+)\s*minute/i);
+        const secM = txt.match(/(\d+)\s*second/i);
+        const hrM = txt.match(/(\d+)\s*hour/i);
+        if (minM || secM || hrM) {
+          durationSec = (hrM ? parseInt(hrM[1], 10) * 3600 : 0) +
+                        (minM ? parseInt(minM[1], 10) * 60 : 0) +
+                        (secM ? parseInt(secM[1], 10) : 0);
+        }
+      }
+    }
 
     // Exclude short clips/previews (<80s) and long mixes (>720s)
     if (durationSec > 0 && (durationSec < 80 || durationSec > 720)) continue;
@@ -667,7 +711,8 @@ function parseYouTubeSearchCandidates(html, trackTitle = '', trackArtist = '', t
     }
 
     if (primaryArtist) {
-      const artistInTitle = fullNormVideo.includes(primaryArtist);
+      const artistInTitle = fullNormVideo.includes(primaryArtist) ||
+        (primaryArtistCompact.length >= 4 && fullNormVideo.replace(/\s+/g, '').includes(primaryArtistCompact));
       const artistInChannel = normChannel.includes(primaryArtist) ||
         (primaryArtistCompact.length >= 4 && normChannelCompact.includes(primaryArtistCompact));
       if (!artistInTitle && !artistInChannel) continue;
@@ -701,41 +746,89 @@ function parseYouTubeSearchCandidates(html, trackTitle = '', trackArtist = '', t
   return candidates.slice(0, 6).map(c => c.videoId);
 }
 
-async function resolveYouTubeVideoIds(trackOrQuery, expectedDuration = 0, signal = null) {
-  const isObj = typeof trackOrQuery === 'object' && trackOrQuery !== null;
-  const trackTitle = isObj ? (trackOrQuery.title || '') : '';
-  const trackArtist = isObj ? (trackOrQuery.artist || '') : '';
-  const targetDur = expectedDuration || (isObj ? (trackOrQuery.duration || 0) : 0);
-  const searchQuery = isObj
-    ? `${trackTitle} ${trackArtist} official audio`
-    : String(trackOrQuery);
-
-  const q = encodeURIComponent(searchQuery);
-  const ytSearchUrls = [
+async function searchYouTubeQuery(queryStr, trackTitle = '', trackArtist = '', targetDur = 0, signal = null) {
+  const q = encodeURIComponent(queryStr);
+  const urls = [
     `${API_BASE}/api/yt/results?search_query=${q}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.youtube.com/results?search_query=${q}`)}`,
-    `https://corsproxy.io/?${encodeURIComponent(`https://www.youtube.com/results?search_query=${q}`)}`
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.youtube.com/results?search_query=${q}`)}`
   ];
 
-  // Try primary proxy first with fast timeout, or fallback proxies in parallel
-  const tryFetchHtml = async (url, timeout) => {
-    const res = await fetchWithTimeout(url, { signal }, timeout);
+  const fetchCandidates = async (url, timeoutMs) => {
+    const res = await fetchWithTimeout(url, { signal }, timeoutMs);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const html = await res.text();
     const ids = parseYouTubeSearchCandidates(html, trackTitle, trackArtist, targetDur);
-    if (ids.length === 0) throw new Error('No valid candidates');
+    if (!ids || ids.length === 0) throw new Error('No valid candidates');
     return ids;
   };
 
   try {
-    return await Promise.any(ytSearchUrls.map((u, idx) => tryFetchHtml(u, idx === 0 ? 3500 : 4200)));
+    return await Promise.any(urls.map((u, idx) => fetchCandidates(u, idx === 0 ? 3500 : 4500)));
   } catch (_) {
     return [];
   }
 }
 
+async function resolveYouTubeVideoIds(trackOrQuery, expectedDuration = 0, signal = null) {
+  const isObj = typeof trackOrQuery === 'object' && trackOrQuery !== null;
+  const trackTitle = isObj ? (trackOrQuery.title || '') : '';
+  const trackArtist = isObj ? (trackOrQuery.artist || '') : '';
+  const trackAlbum = isObj ? (trackOrQuery.album || '') : '';
+  const targetDur = expectedDuration || (isObj ? (trackOrQuery.duration || 0) : 0);
+
+  if (!isObj) {
+    return await searchYouTubeQuery(String(trackOrQuery), '', '', targetDur, signal);
+  }
+
+  const cleanTitle = normalizeStr(trackTitle) || trackTitle;
+  const cleanArtist = getPrimaryArtistNorm(trackArtist) || trackArtist;
+  const cleanAlbum = normalizeStr(trackAlbum);
+
+  // Stage 1: High-precision queries (Artist + Quoted Title, and Artist + Title)
+  const stage1Queries = [
+    `${cleanArtist} "${cleanTitle}"`,
+    `${cleanArtist} ${cleanTitle}`
+  ];
+
+  try {
+    const stage1Results = await Promise.any(
+      stage1Queries.map(q => searchYouTubeQuery(q, trackTitle, trackArtist, targetDur, signal).then(ids => {
+        if (!ids || ids.length === 0) throw new Error('Empty');
+        return ids;
+      }))
+    );
+    if (stage1Results && stage1Results.length > 0) {
+      return stage1Results;
+    }
+  } catch (_) {}
+
+  // Stage 2: Comprehensive Fallback queries
+  const stage2Queries = [
+    `${cleanArtist} - Topic ${cleanTitle}`,
+    `${cleanTitle} ${cleanArtist}`,
+    ...(cleanAlbum && cleanAlbum !== cleanTitle ? [`${cleanArtist} ${cleanAlbum} ${cleanTitle}`] : []),
+    `${cleanTitle} ${cleanArtist} official audio`
+  ];
+
+  try {
+    const stage2Results = await Promise.any(
+      stage2Queries.map(q => searchYouTubeQuery(q, trackTitle, trackArtist, targetDur, signal).then(ids => {
+        if (!ids || ids.length === 0) throw new Error('Empty');
+        return ids;
+      }))
+    );
+    if (stage2Results && stage2Results.length > 0) {
+      return stage2Results;
+    }
+  } catch (_) {}
+
+  return [];
+}
+
 function normalizeStr(s) {
   return (s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/&amp;/g, ' ')
     .replace(/\b(feat|ft|featuring)\b\.?.*$/i, '')
@@ -773,7 +866,7 @@ function isExactSongMatch(candidate, targetTitle, targetArtist, targetDuration =
   const cDur = Number(candidate.duration) || 0;
   // Never accept a short preview clip (<85s) as a full track
   if (cDur < 85) return false;
-  if (targetDuration > 85 && Math.abs(cDur - targetDuration) > 16) return false;
+  if (targetDuration > 85 && Math.abs(cDur - targetDuration) > 30) return false;
 
   return true;
 }
@@ -808,12 +901,20 @@ async function resolveSearchTrackFullAudio(track, signal = null) {
   }
 
   // 3. Run direct full-track search (pre-filtered by isExactSongMatch) and YouTube Official Audio / Topic resolution IN PARALLEL
+  const cleanTitle = normalizeStr(track.title) || track.title;
+  const cleanArtist = getPrimaryArtistNorm(track.artist) || track.artist;
+
   const [saavnSettled, ytSettled] = await Promise.allSettled([
-    fetchFullLengthTracks(`${track.title} ${track.artist}`, signal, track.title, track.artist, track.duration),
+    fetchFullLengthTracks(`${cleanTitle} ${cleanArtist}`, signal, track.title, track.artist, track.duration),
     resolveYouTubeVideoIds(track, track.duration, signal)
   ]);
 
-  const fullMatches = saavnSettled.status === 'fulfilled' ? (saavnSettled.value || []) : [];
+  let fullMatches = saavnSettled.status === 'fulfilled' ? (saavnSettled.value || []) : [];
+  if (fullMatches.length === 0 && cleanArtist && cleanTitle) {
+    try {
+      fullMatches = await fetchFullLengthTracks(`${cleanArtist} ${cleanTitle}`, signal, track.title, track.artist, track.duration);
+    } catch (_) {}
+  }
   const exactMatch = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist, track.duration));
   const videoIds = ytSettled.status === 'fulfilled' ? (ytSettled.value || []) : [];
 
@@ -994,12 +1095,28 @@ async function loadTrack(index, autoPlay = true) {
     return;
   }
 
-  // 5. No verified full-length source found — do NOT silently play a wrong track or 30s preview clip
+  // 5. If all full-length sources were checked and unavailable, play official preview clip if available
+  if (track.fallbackPreviewUrl) {
+    activeEngine = 'html5';
+    audio.src = track.fallbackPreviewUrl;
+    isLoadingTrack = false;
+    syncPlayerBarMetadata(track);
+    if (autoPlay) {
+      playTrack();
+      showToast(`ℹ️ Full song unavailable on streaming catalogs. Playing official 30s preview.`, 4000);
+    } else {
+      setBufferingState(false);
+      syncPlayPauseUI(false);
+    }
+    return;
+  }
+
+  // 6. No verified source found — do NOT silently play a wrong track
   isLoadingTrack = false;
   setBufferingState(false);
   syncPlayPauseUI(false);
   if (autoPlay) {
-    showToast(`⚠️ "${track.title}" by ${track.artist} is currently unavailable from verified full-length sources.`, 4000);
+    showToast(`⚠️ "${track.title}" by ${track.artist} is currently unavailable from verified sources.`, 4000);
   }
 }
 
@@ -1457,6 +1574,11 @@ function saveDownloadedTrack(track) {
 }
 
 async function resolveDownloadAudioUrl(track) {
+  if (track.needsFullResolve && !track.resolvedFull) {
+    try {
+      await resolveSearchTrackFullAudio(track);
+    } catch (_) {}
+  }
   if (track.verifiedFullAudioUrl && track.verifiedFullAudioUrl.startsWith('http')) {
     return track.verifiedFullAudioUrl;
   }
@@ -1489,7 +1611,7 @@ async function resolveDownloadAudioUrl(track) {
     }
   } catch (_) {}
 
-  return track.verifiedFullAudioUrl || track.downloadUrl || track.streamUrl || null;
+  return track.verifiedFullAudioUrl || track.downloadUrl || track.streamUrl || track.fallbackPreviewUrl || null;
 }
 
 async function downloadCurrentTrack() {
@@ -2313,6 +2435,8 @@ async function fetchFullLengthTracks(query, signal = null, targetTitle = '', tar
   try {
     return await Promise.any([
       fetchWrapper(`${API_BASE}/api/saavn2/search/songs?query=${q}&limit=20`),
+      fetchWrapper(`${API_BASE}/api/saavn/search/songs?query=${q}&limit=20`),
+      fetchWrapper(`${API_BASE}/api/saavn3/search/songs?query=${q}&limit=20`),
       fetchOfficial(`${API_BASE}/api/jiosaavn/${officialApiPath}`),
       fetchOfficial(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.jiosaavn.com/${officialApiPath}`)}`)
     ]);
@@ -2404,7 +2528,10 @@ async function performSearch(query) {
       globalCatalogTracks = data.results.filter(item => item.trackName && item.artistName).map(item => {
         const matchedCurated = findMatchingCuratedTrack(item.trackName, item.artistName);
         if (matchedCurated) {
-          return { ...matchedCurated };
+          return {
+            ...matchedCurated,
+            fallbackPreviewUrl: item.previewUrl || matchedCurated.fallbackPreviewUrl || null
+          };
         }
         return {
           id: `global-${item.trackId}`,
@@ -2415,6 +2542,7 @@ async function performSearch(query) {
           cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '600x600bb') : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
           streamUrl: '',
           downloadUrl: '',
+          fallbackPreviewUrl: item.previewUrl || null,
           needsFullResolve: true,
           resolvedFull: false
         };
