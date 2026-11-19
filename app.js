@@ -206,7 +206,7 @@ function startYtVideoWithWatchdog(videoId, autoPlay = true) {
         logAudioDiagnostics('YT_READY_TIMEOUT', { videoId });
         tryNextPlaybackSource(getActiveTrack());
       }
-    }, 2500);
+    }, 12000);
     return;
   }
   try { audio.pause(); } catch (_) {}
@@ -221,7 +221,7 @@ function startYtVideoWithWatchdog(videoId, autoPlay = true) {
         console.warn("YouTube watchdog triggered for videoId:", videoId, "state:", state);
         tryNextPlaybackSource(getActiveTrack());
       }
-    }, 5000);
+    }, 12000);
   } else {
     setBufferingState(false);
     if (ytPlayer.cueVideoById) {
@@ -317,33 +317,7 @@ async function tryNextPlaybackSource(track) {
     return;
   }
 
-  // 5. Fallback gracefully to official preview
-  fallbackToOfficialPreview(track);
-}
-
-function fallbackToOfficialPreview(track) {
-  if (track && track.fallbackPreviewUrl) {
-    activeEngine = 'html5';
-    if (ytPlayerReady && ytPlayer && ytPlayer.stopVideo) {
-      try { ytPlayer.stopVideo(); } catch (_) {}
-    }
-    audio.src = track.fallbackPreviewUrl;
-    logAudioDiagnostics('FALLBACK_OFFICIAL_PREVIEW', { url: track.fallbackPreviewUrl });
-    if (!userPaused) {
-      audio.play().then(() => {
-        setBufferingState(false);
-        syncPlayPauseUI(true);
-        showToast(`ℹ️ Full song unavailable on streaming catalogs. Playing official 30s preview.`, 4000);
-      }).catch((err) => {
-        logAudioDiagnostics('PREVIEW_PLAY_FAILED', { error: err?.message });
-        setBufferingState(false);
-        syncPlayPauseUI(false);
-        showToast(`⚠️ "${track.title}" by ${track.artist} is currently unavailable from verified sources.`, 3500);
-      });
-    }
-    return;
-  }
-
+  // 5. If all sources exhausted, cleanly notify without downgrading to 30s snippet
   logAudioDiagnostics('ALL_SOURCES_EXHAUSTED', { title: track?.title, artist: track?.artist });
   setBufferingState(false);
   syncPlayPauseUI(false);
@@ -358,9 +332,12 @@ function initYtEngine() {
   const playerDiv = document.getElementById('ytPlayer');
   if (!playerDiv) return;
 
-  const originParam = (typeof window !== 'undefined' && window.location.origin && window.location.origin.startsWith('http'))
+  let originParam = (typeof window !== 'undefined' && window.location.origin && window.location.origin.startsWith('https://'))
     ? window.location.origin
-    : undefined;
+    : 'https://preeminent-kitten-e39dfe.netlify.app';
+  if (originParam.includes('localhost') || originParam.startsWith('http://')) {
+    originParam = 'https://preeminent-kitten-e39dfe.netlify.app';
+  }
 
   const playerVars = {
     autoplay: 0,
@@ -368,14 +345,16 @@ function initYtEngine() {
     disablekb: 1,
     fs: 0,
     modestbranding: 1,
-    playsinline: 1
+    playsinline: 1,
+    enablejsapi: 1,
+    origin: originParam,
+    widget_referrer: originParam
   };
-  if (originParam) playerVars.origin = originParam;
 
   try {
     ytPlayer = new YT.Player('ytPlayer', {
-      height: '200',
-      width: '200',
+      height: '1',
+      width: '1',
       playerVars: playerVars,
       events: {
         onReady: () => {
@@ -1188,19 +1167,6 @@ async function loadTrack(index, autoPlay = true) {
 
   // 2. Resolve any Global Catalog searched track to a verified 100% Full-Length source in parallel
   if ((track.needsFullResolve && !track.resolvedFull) || (!track.verifiedFullAudioUrl && !track.ytVideoId && !track.streamUrl)) {
-    // Crucial Mobile Gesture Preservation: Lock the mobile audio gesture immediately inside the user click
-    if (autoPlay && track.fallbackPreviewUrl && !track.verifiedFullAudioUrl && !track.ytVideoId) {
-      activeEngine = 'html5';
-      audio._loadedSessionId = trackSessionId;
-      audio.src = track.fallbackPreviewUrl;
-      audio.play().then(() => {
-        syncPlayPauseUI(true);
-        logAudioDiagnostics('MOBILE_GESTURE_LOCKED_PLAYING', { track: track.title, url: track.fallbackPreviewUrl });
-      }).catch(err => {
-        logAudioDiagnostics('MOBILE_GESTURE_LOCK_ERROR', { error: err?.message });
-      });
-    }
-
     setBufferingState(true);
     activeResolveController = new AbortController();
     try {
@@ -1250,27 +1216,7 @@ async function loadTrack(index, autoPlay = true) {
     return;
   }
 
-  // 5. If all full-length sources were checked and unavailable, play official preview clip if available
-  if (track.fallbackPreviewUrl) {
-    activeEngine = 'html5';
-    audio._loadedSessionId = trackSessionId;
-    isLoadingTrack = false;
-    syncPlayerBarMetadata(track);
-    logAudioDiagnostics('FALLBACK_OFFICIAL_PREVIEW_STEP5', { url: track.fallbackPreviewUrl, title: track.title });
-    if (autoPlay) {
-      if (audio.src !== track.fallbackPreviewUrl) {
-        audio.src = track.fallbackPreviewUrl;
-      }
-      playTrack();
-      showToast(`ℹ️ Full song unavailable on streaming catalogs. Playing official 30s preview.`, 4000);
-    } else {
-      setBufferingState(false);
-      syncPlayPauseUI(false);
-    }
-    return;
-  }
-
-  // 6. No verified source found — do NOT silently play a wrong track
+  // 5. If all full-length sources were checked and unavailable, cleanly show notification
   isLoadingTrack = false;
   setBufferingState(false);
   syncPlayPauseUI(false);
