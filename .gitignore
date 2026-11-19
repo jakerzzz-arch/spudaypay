@@ -12,3 +12,5 @@ verify-100-full-downloads.js
 strict-verified-map.json
 dl-all-remaining.js
 test-audio-apis.js
+test-search-endpoints.js
+test-search-quality.js
