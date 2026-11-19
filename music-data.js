@@ -2102,6 +2102,23 @@ const CURATED_TRACKS = [
   }
 ];
 
+// Upgrade streamUrl on all curated tracks to use their full-length 320kbps studio audio URL
+CURATED_TRACKS.forEach(t => {
+  if (t.downloadUrl && t.downloadUrl.startsWith('http')) {
+    t.prevPreviewUrl = t.streamUrl;
+    t.streamUrl = t.downloadUrl;
+  }
+});
+
+const SPOTIFY_SECTIONS = [
+  { id: "tophits", title: "Today's Top Hits", subtitle: "The hottest tracks on the planet right now", tag: "Billboard Hot 100", genre: "pop" },
+  { id: "charts", title: "Global Chart Toppers", subtitle: "Record-breaking anthems with billions of plays", tag: "Global 50", genre: "synthwave" },
+  { id: "pop", title: "Pop & Dance Anthems", subtitle: "High energy chart-toppers to power your day", tag: "Party", genre: "pop" },
+  { id: "hiphop", title: "Hip-Hop & Late Night R&B", subtitle: "Heavy bass, midnight mood tracks and global trap", tag: "Late Night", genre: "hiphop" },
+  { id: "chill", title: "Chill Lo-Fi & Coffee Beats", subtitle: "Relax, study and unwind with smooth laidback melodies", tag: "Relaxing", genre: "lofi" },
+  { id: "classics", title: "Rock & Timeless Classics", subtitle: "Legendary stadium anthems that live forever", tag: "Legendary", genre: "rock" }
+];
+
 if (typeof module !== "undefined") {
-  module.exports = { CURATED_TRACKS };
+  module.exports = { CURATED_TRACKS, SPOTIFY_SECTIONS };
 }
