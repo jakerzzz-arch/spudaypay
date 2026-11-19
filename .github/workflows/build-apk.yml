@@ -36,8 +36,6 @@ jobs:
         run: |
           npx cap add android
           npx cap sync android
-          sed -i 's/versionCode 1/versionCode ${{ github.run_number }}/g' android/app/build.gradle
-          sed -i 's/versionName "1.0"/versionName "1.0.${{ github.run_number }}"/g' android/app/build.gradle
           node -e '
             const fs = require("fs");
             const wvPath = "node_modules/@capacitor/android/capacitor/src/main/java/com/getcapacitor/CapacitorWebView.java";
@@ -54,17 +52,13 @@ jobs:
                   "        super.onVisibilityChanged(changedView, android.view.View.VISIBLE);",
                   "    }",
                   "    @Override",
-                  "    public void scrollTo(int x, int y) {",
-                  "        super.scrollTo(0, y);",
-                  "    }",
-                  "    @Override",
                   "    public void onPause() {",
                   "    }",
                   "}"
                 ].join("\n");
                 src = src.replace(/\}\s*$/, patch);
                 fs.writeFileSync(wvPath, src, "utf8");
-                console.log("Patched CapacitorWebView for nonstop background playback and horizontal scroll lock");
+                console.log("Patched CapacitorWebView for nonstop background playback");
               }
             }
           '
@@ -192,7 +186,6 @@ jobs:
                   if (this.bridge != null && this.bridge.getWebView() != null) {
                       this.bridge.getWebView().clearCache(true);
                       this.bridge.getWebView().setHorizontalScrollBarEnabled(false);
-                      this.bridge.getWebView().setOverScrollMode(android.view.View.OVER_SCROLL_NEVER);
                       this.bridge.getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
                       this.bridge.getWebView().getSettings().setJavaScriptCanOpenWindowsAutomatically(true);
 
