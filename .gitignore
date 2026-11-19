@@ -1,0 +1,10 @@
+node_modules/
+audio/
+yt-dlp.exe
+ffmpeg.exe
+ffmpeg.zip
+batch-*.txt
+test-track-*
+download-all-100-real-audio.js
+batch-download-100.js
+rebuild-verified-music-data.js
