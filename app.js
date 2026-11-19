@@ -402,6 +402,10 @@ function initYtEngine() {
             return;
           }
           if (event.data === YT.PlayerState.PLAYING) {
+            if (ytPlayer._loadedSessionId && currentPlayingTrack?._sessionId && ytPlayer._loadedSessionId !== currentPlayingTrack._sessionId) {
+              try { ytPlayer.stopVideo(); } catch (_) {}
+              return;
+            }
             try { audio.pause(); } catch (_) {}
             clearPlaybackWatchdogs();
             setBufferingState(false);
@@ -628,19 +632,102 @@ function parseDurationToSeconds(str) {
   return 0;
 }
 
+function normalizeStr(s) {
+  if (!s) return '';
+  return String(s)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&amp;/g, ' ')
+    // Strip featuring clauses
+    .replace(/\b(?:feat|ft|featuring)\b\.?.*$/i, '')
+    // Strip parenthetical/bracketed media descriptors without killing the title
+    .replace(/[\(\[]\s*(?:official\s+audio|official\s+music\s+video|official\s+video|official\s+lyric\s+video|lyric\s+video|lyrics|audio|visualizer|hd|hq|4k|remastered|music\s+video)\s*[\)\]]/gi, ' ')
+    .replace(/\b(?:official\s+audio|official\s+music\s+video|official\s+video|lyric\s+video|visualizer)\b/gi, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cleanArtistRaw(s) {
+  return String(s || '')
+    .replace(/\s*-\s*topic\b/i, '')
+    .replace(/\btopic\b/i, '')
+    .replace(/vevo$/i, '')
+    .replace(/\bvevo\b/i, '')
+    .replace(/\bofficial\b/i, '')
+    .trim();
+}
+
+function extractArtistList(artistStr) {
+  if (!artistStr) return [];
+  const cleaned = cleanArtistRaw(artistStr);
+  return String(cleaned)
+    .split(/[,&/|]|\b(?:feat|ft|featuring|with|x|vs|pres|presents)\b\.?/i)
+    .map(a => normalizeStr(a))
+    .filter(a => a && a.length >= 2);
+}
+
+function stripThe(name) {
+  return (name || '').replace(/^the\s+/, '').trim();
+}
+
+function getPrimaryArtistNorm(artistStr) {
+  const list = extractArtistList(artistStr);
+  return list.length > 0 ? list[0] : normalizeStr(artistStr);
+}
+
+function isPrimaryArtistMatch(candidateArtistStr, targetArtistStr) {
+  if (!candidateArtistStr || !targetArtistStr) return false;
+  const targetList = extractArtistList(targetArtistStr);
+  const candList = extractArtistList(candidateArtistStr);
+  if (targetList.length === 0 || candList.length === 0) return false;
+
+  const targetPrimary = targetList[0];
+  const candPrimary = candList[0];
+
+  // 1. Exact match of primary or any collaborative artists
+  if (targetPrimary === candPrimary) return true;
+  for (const t of targetList) {
+    for (const c of candList) {
+      if (t === c) return true;
+      if (stripThe(t) === stripThe(c)) return true;
+    }
+  }
+
+  // 2. Mononym / Topic handle matching (e.g. 'idkgreek' ends with 'greek', 'GracieAbrams' matches 'Gracie Abrams')
+  for (const t of targetList) {
+    const tClean = stripThe(t);
+    const tCompact = tClean.replace(/\s+/g, '');
+    for (const c of candList) {
+      const cClean = stripThe(c);
+      const cCompact = cClean.replace(/\s+/g, '');
+      if (tCompact === cCompact) return true;
+      if (tCompact.length >= 4 && cCompact.length >= 4) {
+        if (cCompact.endsWith(tCompact) || tCompact.endsWith(cCompact)) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 const VERSION_TAGS = [
-  'remix', 'live', 'cover', 'karaoke', 'instrumental', 'acoustic', 'unplugged',
-  'sped up', 'slowed', 'reverb', 'nightcore', '8d', 'lullaby', 'tribute',
-  'parody', 'mashup', 'demo', 'ringtone', 'teaser', 'preview', 'medley',
-  'reprise', 'commentary', 'backing track', 'piano version', 'drum cover',
-  'guitar cover', 'bass cover'
+  'remix', 'mix', 'live', 'cover', 'karaoke', 'instrumental', 'acoustic', 'unplugged',
+  'sped up', 'speed up', 'slowed', 'slowed down', 'reverb', 'nightcore', '8d', '8d audio',
+  'lullaby', 'tribute', 'parody', 'mashup', 'demo', 'ringtone', 'teaser', 'preview',
+  'medley', 'reprise', 'commentary', 'backing track', 'piano version', 'piano cover',
+  'drum cover', 'guitar cover', 'bass cover', 'extended', 'extended mix', 'club mix',
+  'radio edit', 'edit', 'stripped', 'acapella', 'a cappella', 'orchestral', 'orchestra',
+  'symphonic', 'clean version', 'clean', 'explicit', 'deluxe', 'anniversary', 'alternate take',
+  "taylor's version", 'taylors version'
 ];
 
 function hasMismatchedVersionTag(targetRawTitle, candidateRawTitle, candidateExtra = '') {
   const tLower = String(targetRawTitle || '').toLowerCase();
   const cCombined = `${candidateRawTitle || ''} ${candidateExtra || ''}`.toLowerCase();
 
-  if (/\b(cover by|originally performed by|in the style of|tribute to|karaoke version)\b/i.test(cCombined)) {
+  if (/\b(cover by|originally performed by|in the style of|tribute to|karaoke version|piano tutorial|guitar tutorial)\b/i.test(cCombined)) {
     return true;
   }
 
@@ -650,48 +737,8 @@ function hasMismatchedVersionTag(targetRawTitle, candidateRawTitle, candidateExt
     const targetHas = regex.test(tLower);
     const candidateHas = regex.test(cCombined);
     if (candidateHas && !targetHas) return true;
+    if (targetHas && !candidateHas) return true;
   }
-
-  const requiredIfInTarget = ['remix', 'live', 'acoustic', 'instrumental', 'slowed', 'sped up'];
-  for (const tag of requiredIfInTarget) {
-    const escaped = tag.replace(/\s+/g, '\\s+');
-    const regex = new RegExp(`\\b${escaped}\\b`, 'i');
-    if (regex.test(tLower) && !regex.test(cCombined)) return true;
-  }
-
-  return false;
-}
-
-function getPrimaryArtistNorm(artistStr) {
-  const first = String(artistStr || '')
-    .split(',')[0]
-    .split('&')[0]
-    .split(/\b(?:feat|ft|featuring|with|x)\b/i)[0];
-  return normalizeStr(first);
-}
-
-function isPrimaryArtistMatch(candidateArtistStr, targetArtistStr) {
-  const targetPrimary = getPrimaryArtistNorm(targetArtistStr);
-  const candPrimary = getPrimaryArtistNorm(candidateArtistStr);
-  const candFull = normalizeStr(candidateArtistStr);
-  const targetFull = normalizeStr(targetArtistStr);
-  if (!targetPrimary || targetPrimary.length < 2 || !candFull) return false;
-
-  if (candPrimary === targetPrimary || candFull === targetPrimary) return true;
-
-  const escapedTarget = targetPrimary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  if (new RegExp(`\\b${escapedTarget}\\b`, 'i').test(candFull)) return true;
-
-  if (candPrimary && candPrimary.length >= 3) {
-    const escapedCand = candPrimary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp(`\\b${escapedCand}\\b`, 'i').test(targetFull)) return true;
-  }
-
-  // Handle compact artist handles (e.g. "idkgreek" includes "greek", "billieeilish" includes "billie eilish")
-  const targetCompact = targetPrimary.replace(/\s+/g, '');
-  const candCompact = candPrimary.replace(/\s+/g, '');
-  if (targetCompact.length >= 4 && candCompact.includes(targetCompact)) return true;
-  if (candCompact.length >= 4 && targetCompact.includes(candCompact)) return true;
 
   return false;
 }
@@ -700,32 +747,37 @@ function isYouTubeTitleMatch(rawVideoTitle, targetTitle, targetArtist) {
   const normTarget = normalizeStr(targetTitle);
   if (!normTarget) return false;
 
-  const escapedTarget = normTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const fullNormVideo = String(rawVideoTitle || '')
-    .toLowerCase()
-    .replace(/&amp;/g, ' ')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const raw = String(rawVideoTitle || '');
+  const rawNorm = normalizeStr(raw);
 
-  if (!new RegExp(`\\b${escapedTarget}\\b`, 'i').test(fullNormVideo)) return false;
+  // If candidate title contains mismatched version tags (remix, acoustic, cover, live, etc.), reject
+  if (hasMismatchedVersionTag(targetTitle, raw)) return false;
 
-  // Strip parentheticals/brackets like (Official Audio), [Lyrics], etc. and split on " - "
-  const cleaned = String(rawVideoTitle || '')
-    .replace(/\([^)]*\)/g, ' ')
-    .replace(/\[[^\]]*\]/g, ' ')
-    .replace(/\b(official\s+audio|official\s+lyric\s+video|official\s+music\s+video|official\s+video|lyric\s+video|lyrics|audio|visualizer|hd|hq|4k|remastered)\b/gi, ' ');
+  // 1. Direct normalized equality
+  if (rawNorm === normTarget) return true;
+
+  // 2. YouTube common format: "Artist - Title" or "Title - Artist"
+  const cleaned = raw
+    .replace(/[\(\[]\s*(?:official\s+audio|official\s+music\s+video|official\s+video|official\s+lyric\s+video|lyric\s+video|lyrics|audio|visualizer|hd|hq|4k|remastered|music\s+video)\s*[\)\]]/gi, ' ')
+    .replace(/\b(?:official\s+audio|official\s+music\s+video|official\s+video|lyric\s+video|visualizer)\b/gi, ' ');
+
+  const cleanedNorm = normalizeStr(cleaned);
+  if (cleanedNorm === normTarget) return true;
 
   const segments = cleaned.split(/\s+[-–—|:]\s+/).map(s => normalizeStr(s)).filter(Boolean);
   if (segments.some(seg => seg === normTarget)) return true;
 
-  const primaryArtist = getPrimaryArtistNorm(targetArtist);
-  if (primaryArtist) {
-    const withoutArtist = normalizeStr(cleaned).replace(new RegExp(`\\b${primaryArtist.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), ' ').replace(/\s+/g, ' ').trim();
-    if (withoutArtist === normTarget) return true;
+  // 3. Title with artist name stripped
+  const targetArtists = extractArtistList(targetArtist);
+  for (const a of targetArtists) {
+    if (a.length >= 3) {
+      const escaped = a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const withoutArtist = cleanedNorm.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), ' ').replace(/\s+/g, ' ').trim();
+      if (withoutArtist === normTarget) return true;
+    }
   }
 
-  return normalizeStr(rawVideoTitle) === normTarget;
+  return false;
 }
 
 function parseYouTubeSearchCandidates(html, trackTitle = '', trackArtist = '', targetDuration = 0) {
@@ -733,9 +785,7 @@ function parseYouTubeSearchCandidates(html, trackTitle = '', trackArtist = '', t
   const candidates = [];
   const seenIds = new Set();
   const normTargetTitle = normalizeStr(trackTitle);
-  const primaryArtist = getPrimaryArtistNorm(trackArtist);
-  const primaryArtistCompact = primaryArtist.replace(/\s+/g, '');
-  const badVideoRegex = /karaoke|instrumental|reaction|parody|tutorial|lesson|cover by|drum cover|guitar cover|bass cover|piano tutorial|teaser|preview|trailer|ringtone|#shorts|\bshorts\b/i;
+  const badVideoRegex = /\b(?:karaoke|instrumental|reaction|reacting|parody|tutorial|lesson|how to play|cover|covered by|drum cover|guitar cover|bass cover|piano cover|piano tutorial|teaser|preview|trailer|ringtone|compilation|greatest hits|full album|1 hour|10 hours|loop|looped|#shorts|shorts)\b/i;
 
   const blocks = html.split('"videoRenderer":{').slice(1);
   for (const b of blocks) {
@@ -775,45 +825,33 @@ function parseYouTubeSearchCandidates(html, trackTitle = '', trackArtist = '', t
       }
     }
 
-    // Exclude short clips/previews (<80s) and long mixes (>720s)
-    if (durationSec > 0 && (durationSec < 80 || durationSec > 720)) continue;
-    if (targetDuration > 85 && durationSec > 0 && Math.abs(durationSec - targetDuration) > 45) continue;
+    // Exclude short clips/previews (<80s) and long mixes (>600s)
+    if (durationSec > 0 && (durationSec < 80 || durationSec > 600)) continue;
+    if (targetDuration > 85 && durationSec > 0 && Math.abs(durationSec - targetDuration) > 35) continue;
 
-    const normTitle = normalizeStr(rawTitle);
-    const normChannel = normalizeStr(channel);
-    const normChannelCompact = normChannel.replace(/\s+/g, '');
-    const fullNormVideo = rawTitle.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (normTargetTitle && !isYouTubeTitleMatch(rawTitle, trackTitle, trackArtist)) continue;
 
-    if (normTargetTitle) {
-      if (!isYouTubeTitleMatch(rawTitle, trackTitle, trackArtist)) continue;
-    }
-
-    if (primaryArtist) {
-      const artistInTitle = fullNormVideo.includes(primaryArtist) ||
-        (primaryArtistCompact.length >= 4 && fullNormVideo.replace(/\s+/g, '').includes(primaryArtistCompact));
-      const artistInChannel = normChannel.includes(primaryArtist) ||
-        (primaryArtistCompact.length >= 4 && normChannelCompact.includes(primaryArtistCompact));
-      if (!artistInTitle && !artistInChannel) continue;
-    }
+    // Strict artist match: artist MUST match in channel or video title
+    const artistInChannel = isPrimaryArtistMatch(channel, trackArtist);
+    const artistInTitle = isPrimaryArtistMatch(rawTitle, trackArtist);
+    if (!artistInChannel && !artistInTitle) continue;
 
     let score = 50;
-    if (normTitle === normTargetTitle) score += 25;
+    const normTitle = normalizeStr(rawTitle);
+    if (normTitle === normTargetTitle) score += 35;
 
-    // Strongly prefer YouTube Music "- Topic", "Official Audio", and "Lyrics" (pure album audio & 100% embeddable)
-    if (/topic/i.test(channel)) score += 50;
-    if (primaryArtistCompact.length >= 4 && normChannelCompact.includes(primaryArtistCompact)) score += 30;
-    if (/official audio/i.test(rawTitle)) score += 40;
-    if (/lyric/i.test(rawTitle)) score += 25;
-    if (/\baudio\b/i.test(rawTitle)) score += 20;
-    if (/official music video|official video/i.test(rawTitle)) score -= 12;
+    // Highest priority for official YouTube Music album track (- Topic channel)
+    if (/topic/i.test(channel)) score += 60;
+    if (artistInChannel) score += 30;
+    if (/official audio/i.test(rawTitle)) score += 35;
+    if (/official lyric video|lyric video|lyrics/i.test(rawTitle)) score += 20;
+    if (/official music video|official video/i.test(rawTitle)) score += 15;
 
     if (targetDuration > 75 && durationSec > 0) {
       const diff = Math.abs(durationSec - targetDuration);
       if (diff <= 6) score += 35;
       else if (diff <= 15) score += 20;
-      else if (diff <= 30) score += 8;
-    } else if (durationSec === 0) {
-      score -= 20;
+      else if (diff <= 25) score += 10;
     }
 
     seenIds.add(videoId);
@@ -843,7 +881,7 @@ async function searchYouTubeQuery(queryStr, trackTitle = '', trackArtist = '', t
   };
 
   try {
-    const results = await Promise.any(urls.map((u, idx) => fetchCandidates(u, idx === 0 ? 4500 : 5500)));
+    const results = await Promise.any(urls.map((u, idx) => fetchCandidates(u, idx === 0 ? 8500 : 9500)));
     logAudioDiagnostics('SEARCH_YT_QUERY_SUCCESS', { queryStr, count: results.length, candidates: results });
     return results;
   } catch (err) {
@@ -912,21 +950,6 @@ async function resolveYouTubeVideoIds(trackOrQuery, expectedDuration = 0, signal
   return [];
 }
 
-function normalizeStr(s) {
-  return (s || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/&amp;/g, ' ')
-    .replace(/\b(feat|ft|featuring)\b\.?.*$/i, '')
-    .split('(')[0]
-    .split('[')[0]
-    .split(' - ')[0]
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function findMatchingCuratedTrack(title, artist) {
   const tNorm = normalizeStr(title);
   if (!tNorm || !artist) return null;
@@ -961,7 +984,7 @@ function isExactSongMatch(candidate, targetTitle, targetArtist, targetDuration =
 async function resolveSearchTrackFullAudio(track, signal = null) {
   if (!track) return track;
 
-  // 1. Instant match against our 100 verified full-length curated studio tracks
+  // 1. Instant match against our 100 verified full-length curated studio tracks (strictly checking title, artist, and version)
   const curatedMatch = findMatchingCuratedTrack(track.title, track.artist);
   if (curatedMatch) {
     track.verifiedFullAudioUrl = curatedMatch.verifiedFullAudioUrl || curatedMatch.downloadUrl;
@@ -975,8 +998,8 @@ async function resolveSearchTrackFullAudio(track, signal = null) {
     return track;
   }
 
-  // 2. Check in-memory resolved search cache (keyed by exact raw title + primary artist so remixes don't collide with studio originals)
-  const cacheKey = `${String(track.title || '').toLowerCase().trim()}|||${getPrimaryArtistNorm(track.artist)}`;
+  // 2. Check in-memory resolved search cache (keyed by exact track ID + raw title + full artist + album to avoid collisions)
+  const cacheKey = `${track.id || ''}|||${String(track.title || '').toLowerCase().trim()}|||${String(track.artist || '').toLowerCase().trim()}|||${String(track.album || '').toLowerCase().trim()}`;
   if (resolvedSearchCache.has(cacheKey)) {
     const cached = resolvedSearchCache.get(cacheKey);
     Object.assign(track, cached, {
@@ -1087,14 +1110,26 @@ async function loadTrack(index, autoPlay = true) {
   const track = currentTrackList[currentTrackIndex];
   if (!track) return;
 
+  const trackSessionId = `${track.id || 'track'}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  track._sessionId = trackSessionId;
+  currentPlayingTrack = track;
+  audio._loadedSessionId = trackSessionId;
+  if (ytPlayer) {
+    ytPlayer._loadedSessionId = trackSessionId;
+  }
+
   clearPlaybackWatchdogs();
   if (activeResolveController) {
     try { activeResolveController.abort(); } catch (_) {}
     activeResolveController = null;
   }
 
-  // Stop both engines cleanly before switching
-  try { audio.pause(); } catch (_) {}
+  // Stop both engines and reset audio decoder cleanly before switching
+  try {
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+  } catch (_) {}
   stopYtProgressLoop();
   if (ytPlayerReady && ytPlayer && ytPlayer.stopVideo) {
     try { ytPlayer.stopVideo(); } catch (_) {}
@@ -1128,7 +1163,7 @@ async function loadTrack(index, autoPlay = true) {
 
   // 1. Check if track is saved in offline IndexedDB storage
   const offlineBlob = await getOfflineAudioBlob(track.id || track.title);
-  if (loadToken !== currentLoadToken) return;
+  if (loadToken !== currentLoadToken || track._sessionId !== trackSessionId) return;
 
   const isFullLengthBlob = offlineBlob && (offlineBlob.size > 850000 || (!track.ytVideoId && !track.verifiedFullAudioUrl) || !navigator.onLine);
   if (isFullLengthBlob) {
@@ -1137,6 +1172,7 @@ async function loadTrack(index, autoPlay = true) {
       try { URL.revokeObjectURL(activeOfflineBlobUrl); } catch (_) {}
     }
     activeOfflineBlobUrl = URL.createObjectURL(offlineBlob);
+    audio._loadedSessionId = trackSessionId;
     audio.src = activeOfflineBlobUrl;
     isLoadingTrack = false;
     syncPlayerBarMetadata(track);
@@ -1155,6 +1191,7 @@ async function loadTrack(index, autoPlay = true) {
     // Crucial Mobile Gesture Preservation: Lock the mobile audio gesture immediately inside the user click
     if (autoPlay && track.fallbackPreviewUrl && !track.verifiedFullAudioUrl && !track.ytVideoId) {
       activeEngine = 'html5';
+      audio._loadedSessionId = trackSessionId;
       audio.src = track.fallbackPreviewUrl;
       audio.play().then(() => {
         syncPlayPauseUI(true);
@@ -1170,7 +1207,7 @@ async function loadTrack(index, autoPlay = true) {
       await resolveSearchTrackFullAudio(track, activeResolveController.signal);
     } catch (_) {}
     activeResolveController = null;
-    if (loadToken !== currentLoadToken) return;
+    if (loadToken !== currentLoadToken || track._sessionId !== trackSessionId) return;
     syncPlayerBarMetadata(track);
   }
 
@@ -1182,6 +1219,7 @@ async function loadTrack(index, autoPlay = true) {
 
   if (verifiedDirectUrl) {
     activeEngine = 'html5';
+    audio._loadedSessionId = trackSessionId;
     audio.src = verifiedDirectUrl;
     isLoadingTrack = false;
     syncPlayerBarMetadata(track);
@@ -1197,9 +1235,14 @@ async function loadTrack(index, autoPlay = true) {
   // 4. Play 100% Verified Official YouTube Full-Length Audio (exact title & artist match)
   if (track.ytVideoId) {
     if (activeEngine === 'html5') {
-      try { audio.pause(); } catch (_) {}
+      try {
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+      } catch (_) {}
     }
     activeEngine = 'yt';
+    if (ytPlayer) ytPlayer._loadedSessionId = trackSessionId;
     isLoadingTrack = false;
     syncPlayerBarMetadata(track);
     logAudioDiagnostics('PLAYING_VERIFIED_YT', { videoId: track.ytVideoId, title: track.title });
@@ -1210,6 +1253,7 @@ async function loadTrack(index, autoPlay = true) {
   // 5. If all full-length sources were checked and unavailable, play official preview clip if available
   if (track.fallbackPreviewUrl) {
     activeEngine = 'html5';
+    audio._loadedSessionId = trackSessionId;
     isLoadingTrack = false;
     syncPlayerBarMetadata(track);
     logAudioDiagnostics('FALLBACK_OFFICIAL_PREVIEW_STEP5', { url: track.fallbackPreviewUrl, title: track.title });
@@ -1286,23 +1330,25 @@ function playTrack() {
     try { ytPlayer.stopVideo(); } catch (_) {}
   }
 
-  // Ensure audio.src is populated for HTML5 engine with a verified source
-  if (!audio.src || audio.src === window.location.href) {
-    const targetSrc = current.verifiedFullAudioUrl ||
-      ((!current.needsFullResolve && current.streamUrl && !current.streamUrl.includes('itunes.apple.com')) ? current.streamUrl : null) ||
-      (isCustomOrLocal ? current.streamUrl : null);
-    if (targetSrc) {
+  // Ensure audio.src is populated for HTML5 engine with the verified source for this exact track session
+  const targetSrc = current.verifiedFullAudioUrl ||
+    ((!current.needsFullResolve && current.streamUrl && !current.streamUrl.includes('itunes.apple.com')) ? current.streamUrl : null) ||
+    (isCustomOrLocal ? current.streamUrl : null);
+
+  if (targetSrc) {
+    if (audio.src !== targetSrc || audio._loadedSessionId !== current._sessionId) {
       activeEngine = 'html5';
+      audio._loadedSessionId = current._sessionId;
       audio.src = targetSrc;
-    } else if (current.ytVideoId) {
-      activeEngine = 'yt';
-      startYtVideoWithWatchdog(current.ytVideoId, true);
-      return;
-    } else {
-      const idxInList = currentTrackList.findIndex(t => t.id === current.id);
-      if (idxInList >= 0) loadTrack(idxInList, true);
-      return;
     }
+  } else if (current.ytVideoId) {
+    activeEngine = 'yt';
+    startYtVideoWithWatchdog(current.ytVideoId, true);
+    return;
+  } else {
+    const idxInList = currentTrackList.findIndex(t => t.id === current.id);
+    if (idxInList >= 0) loadTrack(idxInList, true);
+    return;
   }
 
   if (audio.readyState < 3) {
@@ -1458,6 +1504,10 @@ function setupAudioEvents() {
 
   audio.addEventListener('playing', () => {
     if (activeEngine !== 'html5') {
+      try { audio.pause(); } catch (_) {}
+      return;
+    }
+    if (audio._loadedSessionId && currentPlayingTrack?._sessionId && audio._loadedSessionId !== currentPlayingTrack._sessionId) {
       try { audio.pause(); } catch (_) {}
       return;
     }
@@ -1752,6 +1802,10 @@ async function downloadTrackDirect(track) {
   showToast(`⏳ Downloading "${track.title}" (Full-Length Track)...`, 4000);
 
   let targetUrl = await resolveDownloadAudioUrl(track);
+  // Never save or trigger download of 30-second preview clips as downloaded songs
+  if (targetUrl && targetUrl.includes('itunes.apple.com')) {
+    targetUrl = null;
+  }
   const ext = (targetUrl && targetUrl.endsWith('.webm')) ? 'webm' : 'mp3';
   const filename = `${track.title} - ${track.artist}.${ext}`.replace(/[/\\?%*:|"<>]/g, '_');
 
@@ -1761,9 +1815,10 @@ async function downloadTrackDirect(track) {
       if (!res.ok) throw new Error("Stream fetch failed");
       const blob = await res.blob();
 
-      // Only store in IndexedDB offline blob vault if it is a full-length audio file (>850KB), or save metadata for full playback
-      if (blob.size > 850000 || !targetUrl.includes('itunes.apple.com')) {
+      // Only store in IndexedDB offline blob vault if it is a full-length audio file (>850KB)
+      if (blob.size > 850000) {
         await saveOfflineAudio(trackId, blob);
+        triggerDeviceDownload(blob, filename, targetUrl);
       }
 
       const sizeFormatted = blob.size > 850000
@@ -1775,10 +1830,6 @@ async function downloadTrackDirect(track) {
         fileSize: sizeFormatted,
         isOfflineReady: true
       });
-
-      if (blob.size > 850000) {
-        triggerDeviceDownload(blob, filename, targetUrl);
-      }
       showToast(`✓ "${track.title}" saved to Downloaded Songs (Full-Length)!`);
     } else {
       saveDownloadedTrack({
@@ -2634,7 +2685,7 @@ async function performSearch(query) {
     return tLower.includes(qLower) ||
       aLower.includes(qLower) ||
       alLower.includes(qLower) ||
-      (qNorm && (combined.includes(qNorm) || qNorm.includes(normalizeStr(t.title))));
+      (qNorm && combined.includes(qNorm));
   });
 
   // 2. Fetch Official Global Catalog (100% accurate official song titles, artists, and album covers)
@@ -2678,7 +2729,7 @@ async function performSearch(query) {
   for (const t of [...localMatches, ...globalCatalogTracks]) {
     const primaryArtist = getPrimaryArtistNorm(t.artist);
     const versionKey = hasMismatchedVersionTag('', t.title, '') ? String(t.title || '').toLowerCase().trim() : normalizeStr(t.title);
-    const key = `${versionKey}|${primaryArtist}`;
+    const key = `${t.id || ''}|${versionKey}|${primaryArtist}`;
     if (!seen.has(key)) {
       seen.add(key);
       combinedResults.push(t);
