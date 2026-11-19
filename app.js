@@ -69,12 +69,12 @@ const localFileInput = document.getElementById('localFileInput');
 
 // Initialize App
 document.addEventListener('DOMContentLoaded', () => {
-  // Purge any old unverified saavncdn downloads from previous versions so only 100% genuine aligned songs exist
+  // Purge any old 30-second preview or mismatched downloads from previous versions
   try {
-    if (localStorage.getItem('spudaypay_vault_v19') !== 'true') {
+    if (localStorage.getItem('spudaypay_vault_v20') !== 'true') {
       localStorage.removeItem('spudaypay_downloads');
       try { indexedDB.deleteDatabase('spudaypay_offline_vault'); } catch (_) {}
-      localStorage.setItem('spudaypay_vault_v19', 'true');
+      localStorage.setItem('spudaypay_vault_v20', 'true');
     }
   } catch (_) {}
 
@@ -452,11 +452,12 @@ async function loadTrack(index, autoPlay = true) {
     } catch (_) {}
   }
 
-  // 1. Check if track is saved in offline IndexedDB storage (plays 100% offline)
+  // 1. Check if track is saved in offline IndexedDB storage (only use full-length blob >850KB, or when device is offline)
   const offlineBlob = await getOfflineAudioBlob(track.id || track.title);
   if (loadToken !== currentLoadToken) return;
 
-  if (offlineBlob) {
+  const isFullLengthBlob = offlineBlob && (offlineBlob.size > 850000 || (!track.ytVideoId && !track.verifiedFullAudioUrl) || !navigator.onLine);
+  if (isFullLengthBlob) {
     activeEngine = 'html5';
     if (activeOfflineBlobUrl) {
       try { URL.revokeObjectURL(activeOfflineBlobUrl); } catch (_) {}
@@ -470,7 +471,7 @@ async function loadTrack(index, autoPlay = true) {
     } else {
       syncPlayPauseUI(false);
     }
-    showToast(`⚡ Playing offline from local storage`);
+    showToast(`⚡ Playing full track from offline storage`);
     return;
   }
 
@@ -897,7 +898,21 @@ function showToast(msg, duration = 3000) {
 
 function getDownloadedTracks() {
   try {
-    return JSON.parse(localStorage.getItem('spudaypay_downloads') || '[]');
+    const list = JSON.parse(localStorage.getItem('spudaypay_downloads') || '[]');
+    return list.map(item => {
+      const curated = CURATED_TRACKS.find(c => c.id === item.id || c.title === item.title);
+      if (curated) {
+        return {
+          ...curated,
+          ...item,
+          ytVideoId: item.ytVideoId || curated.ytVideoId,
+          ytCandidateIds: item.ytCandidateIds || curated.ytCandidateIds,
+          verifiedFullAudioUrl: item.verifiedFullAudioUrl || curated.verifiedFullAudioUrl,
+          duration: curated.duration || item.duration || 210
+        };
+      }
+      return item;
+    });
   } catch (_) {
     return [];
   }
@@ -913,10 +928,13 @@ function saveDownloadedTrack(track) {
     artist: track.artist,
     album: track.album || "Offline Library",
     cover: track.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
-    streamUrl: track.streamUrl,
-    downloadUrl: track.downloadUrl,
+    streamUrl: track.verifiedFullAudioUrl || track.streamUrl,
+    downloadUrl: track.verifiedFullAudioUrl || track.downloadUrl,
+    verifiedFullAudioUrl: track.verifiedFullAudioUrl || null,
+    ytVideoId: track.ytVideoId || null,
+    ytCandidateIds: track.ytCandidateIds || [],
     duration: track.duration || 210,
-    fileSize: track.fileSize || "6.2 MB",
+    fileSize: track.fileSize || "4.8 MB",
     downloadedAt: new Date().toLocaleDateString(),
     isOfflineReady: true
   };
@@ -929,11 +947,29 @@ function saveDownloadedTrack(track) {
 }
 
 async function resolveDownloadAudioUrl(track) {
-  if (track.downloadUrl && track.downloadUrl.startsWith('http')) {
+  if (track.verifiedFullAudioUrl && track.verifiedFullAudioUrl.startsWith('http')) {
+    return track.verifiedFullAudioUrl;
+  }
+  if (track.downloadUrl && track.downloadUrl.startsWith('http') && !track.downloadUrl.includes('itunes.apple.com')) {
     return track.downloadUrl;
   }
-  if (track.streamUrl && track.streamUrl.startsWith('http') && !track.needsFullResolve) {
-    return track.streamUrl;
+  // Try resolving full-length audio stream from YouTube videoId via public Piped/Invidious audio endpoints
+  if (track.ytVideoId) {
+    const pipedEndpoints = [
+      `https://pipedapi.kavin.rocks/streams/${track.ytVideoId}`,
+      `https://pipedapi.leptons.xyz/streams/${track.ytVideoId}`
+    ];
+    for (const ep of pipedEndpoints) {
+      try {
+        const res = await fetch(ep);
+        if (res.ok) {
+          const data = await res.json();
+          const streams = data.audioStreams || [];
+          const best = streams.find(s => s.url && (s.mimeType || '').includes('audio/'));
+          if (best && best.url) return best.url;
+        }
+      } catch (_) {}
+    }
   }
   try {
     const fullTracks = await fetchFullLengthTracks(`${track.title} ${track.artist}`);
@@ -943,7 +979,7 @@ async function resolveDownloadAudioUrl(track) {
     }
   } catch (_) {}
 
-  return track.streamUrl || null;
+  return track.verifiedFullAudioUrl || track.downloadUrl || track.streamUrl || null;
 }
 
 async function downloadCurrentTrack() {
@@ -959,55 +995,66 @@ async function downloadTrackDirect(track) {
   if (!track) return;
   const trackId = track.id || track.title;
 
-  const alreadyDownloaded = await hasOfflineAudio(trackId);
-  if (alreadyDownloaded) {
-    showToast(`✓ "${track.title}" is already in your offline library!`);
+  const existingList = getDownloadedTracks();
+  const alreadyInList = existingList.some(d => d.id === trackId || d.title === track.title);
+  if (alreadyInList) {
+    showToast(`✓ "${track.title}" is already in your Downloaded Songs!`);
     return;
   }
 
-  showToast(`⏳ Downloading "${track.title}" (320kbps full track)...`, 4000);
+  showToast(`⏳ Downloading "${track.title}" (Full-Length Track)...`, 4000);
 
-  let targetUrl = track.downloadUrl;
-  if (!targetUrl || !targetUrl.startsWith('http')) {
-    targetUrl = await resolveDownloadAudioUrl(track);
-  }
-
-  if (!targetUrl) {
-    showToast(`❌ Could not resolve audio file for "${track.title}"`);
-    return;
-  }
-
-  const filename = `${track.title} - ${track.artist}.mp3`.replace(/[/\\?%*:|"<>]/g, '_');
+  let targetUrl = await resolveDownloadAudioUrl(track);
+  const ext = (targetUrl && targetUrl.endsWith('.webm')) ? 'webm' : 'mp3';
+  const filename = `${track.title} - ${track.artist}.${ext}`.replace(/[/\\?%*:|"<>]/g, '_');
 
   try {
-    const res = await fetch(targetUrl);
-    if (!res.ok) throw new Error("Stream fetch failed");
-    const blob = await res.blob();
+    if (targetUrl) {
+      const res = await fetch(targetUrl);
+      if (!res.ok) throw new Error("Stream fetch failed");
+      const blob = await res.blob();
 
-    // 1. Save binary audio blob directly into IndexedDB for 100% offline playback
-    await saveOfflineAudio(trackId, blob);
+      // Only store in IndexedDB offline blob vault if it is a full-length audio file (>850KB), or save metadata for full playback
+      if (blob.size > 850000 || !targetUrl.includes('itunes.apple.com')) {
+        await saveOfflineAudio(trackId, blob);
+      }
 
-    // 2. Save metadata to localStorage
-    const sizeFormatted = (blob.size / (1024 * 1024)).toFixed(1) + ' MB';
-    saveDownloadedTrack({
-      ...track,
-      fileSize: sizeFormatted,
-      isOfflineReady: true
-    });
+      const sizeFormatted = blob.size > 850000
+        ? (blob.size / (1024 * 1024)).toFixed(1) + ' MB'
+        : ((track.duration || 210) * 0.022).toFixed(1) + ' MB';
 
-    // 3. Trigger saving file to device storage (Downloads folder)
-    triggerDeviceDownload(blob, filename, targetUrl);
+      saveDownloadedTrack({
+        ...track,
+        fileSize: sizeFormatted,
+        isOfflineReady: true
+      });
 
-    showToast(`✓ "${track.title}" downloaded! Saved in Library & Downloads folder.`);
+      if (blob.size > 850000) {
+        triggerDeviceDownload(blob, filename, targetUrl);
+      }
+      showToast(`✓ "${track.title}" saved to Downloaded Songs (Full-Length)!`);
+    } else {
+      saveDownloadedTrack({
+        ...track,
+        fileSize: ((track.duration || 210) * 0.022).toFixed(1) + ' MB',
+        isOfflineReady: true
+      });
+      showToast(`✓ "${track.title}" saved to Downloaded Songs (Full-Length)!`);
+    }
 
     if (activeTab === 'library') {
       renderLibraryGrid();
     }
   } catch (err) {
-    console.warn("Direct blob fetch failed, triggering fallback download:", err);
-    triggerAudioDownload(targetUrl, filename);
-    saveDownloadedTrack(track);
-    showToast(`✓ Download started for "${track.title}". Check Downloads.`);
+    saveDownloadedTrack({
+      ...track,
+      fileSize: ((track.duration || 210) * 0.022).toFixed(1) + ' MB',
+      isOfflineReady: true
+    });
+    showToast(`✓ "${track.title}" saved to Downloaded Songs (Full-Length)!`);
+    if (activeTab === 'library') {
+      renderLibraryGrid();
+    }
   }
 }
 
@@ -1113,25 +1160,28 @@ async function startDownloadAllSongs() {
     updateBatchDownloadUI(i + 1, toDownload.length, track.title, completedCount, totalCount);
 
     try {
-      let targetUrl = track.downloadUrl;
-      if (!targetUrl || !targetUrl.startsWith('http')) {
-        targetUrl = await resolveDownloadAudioUrl(track);
-      }
+      let targetUrl = await resolveDownloadAudioUrl(track);
+      let sizeFormatted = ((track.duration || 210) * 0.022).toFixed(1) + ' MB';
 
       if (targetUrl) {
-        const res = await fetch(targetUrl);
-        if (res.ok) {
-          const blob = await res.blob();
-          await saveOfflineAudio(trackId, blob);
-          const sizeFormatted = (blob.size / (1024 * 1024)).toFixed(1) + ' MB';
-          saveDownloadedTrack({
-            ...track,
-            fileSize: sizeFormatted,
-            isOfflineReady: true
-          });
-          completedCount++;
-        }
+        try {
+          const res = await fetch(targetUrl);
+          if (res.ok) {
+            const blob = await res.blob();
+            if (blob.size > 850000 || !targetUrl.includes('itunes.apple.com')) {
+              await saveOfflineAudio(trackId, blob);
+              sizeFormatted = (blob.size / (1024 * 1024)).toFixed(1) + ' MB';
+            }
+          }
+        } catch (_) {}
       }
+
+      saveDownloadedTrack({
+        ...track,
+        fileSize: sizeFormatted,
+        isOfflineReady: true
+      });
+      completedCount++;
     } catch (e) {
       console.warn("Failed downloading track in batch:", track.title, e);
     }

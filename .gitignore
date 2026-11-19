@@ -8,3 +8,6 @@ test-track-*
 download-all-100-real-audio.js
 batch-download-100.js
 rebuild-verified-music-data.js
+dl-top-30.js
+verify-100-full-downloads.js
+strict-verified-map.json
