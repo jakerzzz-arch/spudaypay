@@ -1955,36 +1955,98 @@ function saveDownloadedTrack(track) {
   localStorage.setItem('spudaypay_downloads', JSON.stringify(current));
 }
 
+// Global trigger for song downloads from search results and view tables
+window.triggerSongDownload = triggerSongDownload;
+async function triggerSongDownload(track) {
+  await downloadTrackDirect(track);
+}
+
 async function resolveDownloadAudioUrl(track) {
-  if (track.needsFullResolve && !track.resolvedFull) {
-    try {
-      await resolveSearchTrackFullAudio(track);
-    } catch (_) {}
+  if (!track) return null;
+
+  // 1. Check if track already exists in IndexedDB offline blob vault
+  const offlineBlob = await getOfflineAudioBlob(track.id || track.title);
+  if (offlineBlob && offlineBlob.size > 500000) {
+    return {
+      type: 'blob',
+      blob: offlineBlob,
+      ext: track.audioExt || 'webm',
+      source: 'offline-vault'
+    };
   }
-  if (track.verifiedFullAudioUrl && track.verifiedFullAudioUrl.startsWith('http') && !track.verifiedFullAudioUrl.includes('itunes.apple.com')) {
-    return track.verifiedFullAudioUrl;
-  }
-  if (track.downloadUrl && track.downloadUrl.startsWith('http') && !track.downloadUrl.includes('itunes.apple.com')) {
-    return track.downloadUrl;
-  }
-  if (track.ytVideoId) {
-    const direct = await resolveDirectAudioFromVideoIds([track.ytVideoId, ...(track.ytCandidateIds || [])], track.title, track.artist, track.duration);
-    if (direct && direct.streamUrl) {
-      track.audioExt = direct.ext;
-      track.verifiedFullAudioUrl = direct.streamUrl;
-      return direct.streamUrl;
+
+  // 2. Curated track match -> guaranteed full-length studio audio
+  const curatedMatch = findMatchingCuratedTrack(track.title, track.artist);
+  if (curatedMatch && (curatedMatch.downloadUrl || curatedMatch.verifiedFullAudioUrl)) {
+    const url = curatedMatch.downloadUrl || curatedMatch.verifiedFullAudioUrl;
+    if (url && url.startsWith('http') && !url.includes('itunes.apple.com')) {
+      return {
+        type: 'url',
+        url: url,
+        ext: curatedMatch.audioExt || (url.includes('.webm') ? 'webm' : 'mp4'),
+        source: 'curated'
+      };
     }
   }
+
+  // 3. Track has direct verified full audio URL (e.g. JioSaavn 320k or custom/local stream)
+  if (track.verifiedFullAudioUrl && track.verifiedFullAudioUrl.startsWith('http') && !track.verifiedFullAudioUrl.includes('itunes.apple.com') && !track.verifiedFullAudioUrl.includes('deezer.com')) {
+    return {
+      type: 'url',
+      url: track.verifiedFullAudioUrl,
+      ext: track.audioExt || (track.verifiedFullAudioUrl.includes('.webm') ? 'webm' : 'mp4'),
+      source: 'verified-direct'
+    };
+  }
+  if (track.downloadUrl && track.downloadUrl.startsWith('http') && !track.downloadUrl.includes('itunes.apple.com') && !track.downloadUrl.includes('deezer.com')) {
+    return {
+      type: 'url',
+      url: track.downloadUrl,
+      ext: track.audioExt || (track.downloadUrl.includes('.webm') ? 'webm' : 'mp4'),
+      source: 'download-url'
+    };
+  }
+
+  // 4. Query authorized high-fidelity catalog (JioSaavn 320kbps MP4 direct downloads)
+  const cleanTitle = normalizeStr(track.title) || track.title;
+  const cleanArtist = getPrimaryArtistNorm(track.artist) || track.artist;
   try {
-    const fullTracks = await fetchFullLengthTracks(`${track.title} ${track.artist}`, null, track.title, track.artist, track.duration);
+    const fullTracks = await fetchFullLengthTracks(`${cleanTitle} ${cleanArtist}`, null, track.title, track.artist, track.duration);
     const exactMatch = fullTracks.find(m => isExactSongMatch(m, track.title, track.artist, track.duration));
-    if (exactMatch && exactMatch.streamUrl) {
-      return exactMatch.streamUrl;
+    if (exactMatch && exactMatch.streamUrl && exactMatch.streamUrl.startsWith('http') && !exactMatch.streamUrl.includes('itunes.apple.com')) {
+      track.verifiedFullAudioUrl = exactMatch.streamUrl;
+      track.downloadUrl = exactMatch.streamUrl;
+      track.audioExt = 'mp4';
+      return {
+        type: 'url',
+        url: exactMatch.streamUrl,
+        ext: 'mp4',
+        source: 'saavn-320k'
+      };
     }
   } catch (_) {}
 
-  const candidate = track.verifiedFullAudioUrl || track.downloadUrl || track.streamUrl || null;
-  return (candidate && !candidate.includes('itunes.apple.com')) ? candidate : null;
+  // 5. Check if it's YouTube streaming catalog (streaming only)
+  if (track.ytVideoId || (track.sourceCatalog && track.sourceCatalog.toLowerCase().includes('streaming'))) {
+    return {
+      type: 'streaming-only',
+      reason: 'streaming-only'
+    };
+  }
+
+  // 6. Check if it's iTunes or Deezer promotional preview (preview only)
+  if (track.fallbackPreviewUrl || (track.sourceCatalog && (track.sourceCatalog.toLowerCase().includes('apple') || track.sourceCatalog.toLowerCase().includes('deezer')))) {
+    return {
+      type: 'preview-only',
+      reason: 'preview-only'
+    };
+  }
+
+  // 7. General unavailable
+  return {
+    type: 'unavailable',
+    reason: 'unavailable'
+  };
 }
 
 async function downloadCurrentTrack() {
@@ -1997,9 +2059,13 @@ async function downloadCurrentTrack() {
 }
 
 async function downloadTrackDirect(track) {
-  if (!track) return;
+  if (!track) {
+    showToast("No track selected for download.");
+    return;
+  }
   const trackId = track.id || track.title;
 
+  // 1. Check if already downloaded
   const existingList = getDownloadedTracks();
   const alreadyInList = existingList.some(d => isSameDownloadedTrack(d, { ...track, id: trackId }));
   if (alreadyInList) {
@@ -2007,77 +2073,116 @@ async function downloadTrackDirect(track) {
     return;
   }
 
-  showToast(`⏳ Downloading "${track.title}" (Full-Length Track)...`, 4000);
+  // 2. Immediate user feedback
+  showToast(`⏳ Checking download availability for "${track.title}"...`, 3000);
 
-  let targetUrl = await resolveDownloadAudioUrl(track);
-  if (targetUrl && targetUrl.includes('itunes.apple.com')) {
-    targetUrl = null;
+  // 3. Resolve downloadable source
+  const resolution = await resolveDownloadAudioUrl(track);
+
+  // 4. Distinguish non-downloadable states per user requirements
+  if (!resolution || resolution.type === 'unavailable') {
+    showToast(`ℹ️ Download Unavailable: An authorized full-length download is not available for "${track.title}".`, 5000);
+    return;
   }
-  const ext = track.audioExt ||
-    (targetUrl && targetUrl.includes('.webm') ? 'webm' : (targetUrl && (targetUrl.includes('.m4a') || targetUrl.includes('itag=140') || targetUrl.includes('.mp4')) ? 'm4a' : 'mp3'));
-  const filename = `${track.title} - ${track.artist}.${ext}`.replace(/[/\\?%*:|"<>]/g, '_');
+
+  if (resolution.type === 'preview-only') {
+    showToast(`ℹ️ Preview Only: "${track.title}" is a 30-second promotional preview in this catalog. Full download is not licensed by the provider.`, 5000);
+    return;
+  }
+
+  if (resolution.type === 'streaming-only') {
+    showToast(`ℹ️ Streaming Only: "${track.title}" is licensed for streaming playback only. Offline downloading is not authorized by the provider.`, 5000);
+    return;
+  }
+
+  if (resolution.type === 'region-restricted') {
+    showToast(`ℹ️ Region Restricted: "${track.title}" is not licensed for download in this region.`, 5000);
+    return;
+  }
+
+  // 5. Authorized download path:
+  showToast(`⬇️ Downloading "${track.title}" by ${track.artist} (Full Track)...`, 8000);
+
+  const cleanTitle = (track.title || 'Track').replace(/[/\\?%*:|"<>]/g, '_').trim();
+  const cleanArtist = (track.artist || 'Artist').replace(/[/\\?%*:|"<>]/g, '_').trim();
+  let ext = resolution.ext || track.audioExt || 'mp3';
+  let blob = null;
+  let targetUrl = resolution.url || null;
 
   try {
-    if (targetUrl) {
-      const res = await fetch(targetUrl);
-      if (!res.ok) throw new Error("Stream fetch failed");
-      const blob = await res.blob();
-
-      // Only store in IndexedDB offline blob vault if it is a full-length audio file (>850KB)
-      if (blob.size > 850000) {
-        await saveOfflineAudio(trackId, blob);
-        triggerDeviceDownload(blob, filename, targetUrl);
+    if (resolution.type === 'blob') {
+      blob = resolution.blob;
+    } else if (resolution.type === 'url') {
+      const res = await fetchWithTimeout(targetUrl, {}, 30000);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      blob = await res.blob();
+      if (!blob || blob.size < 500000) {
+        throw new Error("Downloaded audio file is incomplete or truncated");
       }
-
-      const sizeFormatted = blob.size > 850000
-        ? (blob.size / (1024 * 1024)).toFixed(1) + ' MB'
-        : ((track.duration || 210) * 0.022).toFixed(1) + ' MB';
-
-      saveDownloadedTrack({
-        ...track,
-        fileSize: sizeFormatted,
-        isOfflineReady: true
-      });
-      showToast(`✓ "${track.title}" saved to Downloaded Songs (Full-Length)!`);
-    } else {
-      saveDownloadedTrack({
-        ...track,
-        fileSize: ((track.duration || 210) * 0.022).toFixed(1) + ' MB',
-        isOfflineReady: true
-      });
-      showToast(`✓ "${track.title}" saved to Downloaded Songs (Full-Length)!`);
+      if (blob.type.includes('webm')) ext = 'webm';
+      else if (blob.type.includes('mp4') || blob.type.includes('m4a')) ext = 'm4a';
+      else if (blob.type.includes('mpeg')) ext = 'mp3';
     }
+
+    const filename = `${cleanTitle} - ${cleanArtist}.${ext}`;
+
+    // Store in IndexedDB Offline Vault for 100% offline playback
+    await saveOfflineAudio(trackId, blob);
+    if (track.title) await saveOfflineAudio(normalizeStr(track.title), blob);
+
+    // Deliver file to user's device
+    triggerDeviceDownload(blob, filename, targetUrl);
+
+    // Format file size
+    const sizeFormatted = (blob.size / (1024 * 1024)).toFixed(1) + ' MB';
+
+    // Save to localStorage download list
+    saveDownloadedTrack({
+      ...track,
+      id: trackId,
+      fileSize: sizeFormatted,
+      isOfflineReady: true,
+      downloadUrl: targetUrl || track.downloadUrl
+    });
+
+    // Real success notification
+    showToast(`✓ Downloaded "${track.title}" (${sizeFormatted})! Saved to device & Offline Vault.`, 4000);
 
     if (activeTab === 'library') {
       renderLibraryGrid();
     }
   } catch (err) {
-    saveDownloadedTrack({
-      ...track,
-      fileSize: ((track.duration || 210) * 0.022).toFixed(1) + ' MB',
-      isOfflineReady: true
-    });
-    showToast(`✓ "${track.title}" saved to Downloaded Songs (Full-Length)!`);
-    if (activeTab === 'library') {
-      renderLibraryGrid();
-    }
+    console.error("Download error for track:", track.title, err);
+    showToast(`❌ Download Failed: Could not download "${track.title}". Please check your connection and tap retry.`, 5000);
   }
 }
 
-function triggerDeviceDownload(blob, filename, fallbackUrl) {
+function triggerDeviceDownload(blob, filename, fallbackUrl = null) {
+  // 1. If running inside Android Capacitor with AndroidMediaBridge
+  if (window.AndroidMediaBridge && typeof window.AndroidMediaBridge.downloadFile === 'function' && fallbackUrl && fallbackUrl.startsWith('http')) {
+    try {
+      const mime = filename.endsWith('.webm') ? 'audio/webm' : (filename.endsWith('.mp4') || filename.endsWith('.m4a') ? 'audio/mp4' : 'audio/mpeg');
+      window.AndroidMediaBridge.downloadFile(fallbackUrl, filename, mime);
+    } catch (_) {}
+  }
+
+  // 2. Trigger browser download manager using object URL
   try {
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
+    a.style.display = 'none';
     a.href = blobUrl;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
     setTimeout(() => {
-      try { URL.revokeObjectURL(blobUrl); } catch (_) {}
-    }, 30000);
-  } catch (_) {
-    if (fallbackUrl) {
+      try {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      } catch (_) {}
+    }, 45000);
+  } catch (e) {
+    if (fallbackUrl && fallbackUrl.startsWith('http')) {
       triggerAudioDownload(fallbackUrl, filename);
     }
   }

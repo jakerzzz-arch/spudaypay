@@ -456,6 +456,27 @@ jobs:
                           }
                       } catch (Exception ignored) {}
                   }
+
+                  @JavascriptInterface
+                  public void downloadFile(String url, String filename, String mimetype) {
+                      try {
+                          if (url == null || url.isEmpty() || url.startsWith("blob:") || url.startsWith("data:")) return;
+                          DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+                          if (mimetype != null && !mimetype.isEmpty()) {
+                              request.setMimeType(mimetype);
+                          }
+                          String finalName = (filename != null && !filename.isEmpty()) ? filename : "song.mp3";
+                          request.setTitle(finalName);
+                          request.setDescription("Spudaypay Song Download");
+                          request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                          request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, finalName);
+                          DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+                          if (dm != null) {
+                              dm.enqueue(request);
+                              runOnUiThread(() -> Toast.makeText(getApplicationContext(), "Downloading: " + finalName, Toast.LENGTH_SHORT).show());
+                          }
+                      } catch (Exception ignored) {}
+                  }
               }
 
               @Override
