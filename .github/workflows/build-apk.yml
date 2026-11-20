@@ -75,19 +75,46 @@ jobs:
           import android.content.Context;
           import android.content.Intent;
           import android.content.pm.ServiceInfo;
+          import android.graphics.Bitmap;
+          import android.graphics.BitmapFactory;
+          import android.media.MediaMetadata;
+          import android.media.session.MediaSession;
+          import android.media.session.PlaybackState;
           import android.net.wifi.WifiManager;
           import android.os.Build;
+          import android.os.Handler;
           import android.os.IBinder;
+          import android.os.Looper;
           import android.os.PowerManager;
+          import java.io.InputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
 
           public class AudioForegroundService extends Service {
-              private static final String CHANNEL_ID = "spudaypay_bg_audio";
+              private static final String CHANNEL_ID = "spudaypay_media_playback";
+              private static final int NOTIFICATION_ID = 1001;
+
               private PowerManager.WakeLock wakeLock;
               private WifiManager.WifiLock wifiLock;
+              private MediaSession mediaSession;
+              private NotificationManager notificationManager;
+              private Handler mainHandler;
+
+              private String currentTitle = "Spudaypay Music";
+              private String currentArtist = "Tap to open player";
+              private String currentAlbum = "Spudaypay";
+              private String currentCoverUrl = "";
+              private Bitmap currentCoverBitmap = null;
+              private boolean isPlaying = false;
+              private long currentPosition = 0;
+              private long currentDuration = 0;
 
               @Override
               public void onCreate() {
                   super.onCreate();
+                  mainHandler = new Handler(Looper.getMainLooper());
+                  notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+
                   try {
                       PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
                       if (pm != null) {
@@ -100,52 +127,265 @@ jobs:
                           wifiLock.acquire();
                       }
                   } catch (Exception ignored) {}
+
+                  initMediaSession();
+                  createNotificationChannel();
+              }
+
+              private void initMediaSession() {
+                  try {
+                      mediaSession = new MediaSession(this, "SpudaypaySession");
+                      mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
+                      mediaSession.setCallback(new MediaSession.Callback() {
+                          @Override
+                          public void onPlay() {
+                              MainActivity.sendPlayerCommand("window.playTrack && window.playTrack();");
+                          }
+                          @Override
+                          public void onPause() {
+                              MainActivity.sendPlayerCommand("window.pauseTrack && window.pauseTrack();");
+                          }
+                          @Override
+                          public void onSkipToNext() {
+                              MainActivity.sendPlayerCommand("window.playNextTrack && window.playNextTrack();");
+                          }
+                          @Override
+                          public void onSkipToPrevious() {
+                              MainActivity.sendPlayerCommand("window.playPrevTrack && window.playPrevTrack();");
+                          }
+                          @Override
+                          public void onSeekTo(long pos) {
+                              MainActivity.sendPlayerCommand("window.seekTo && window.seekTo(" + (pos / 1000) + ");");
+                          }
+                      });
+                      mediaSession.setActive(true);
+                  } catch (Exception ignored) {}
+              }
+
+              private void createNotificationChannel() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && notificationManager != null) {
+                      NotificationChannel channel = new NotificationChannel(
+                          CHANNEL_ID,
+                          "Spudaypay Media Controls",
+                          NotificationManager.IMPORTANCE_LOW
+                      );
+                      channel.setDescription("Shows currently playing song and playback controls");
+                      channel.setShowBadge(false);
+                      channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+                      notificationManager.createNotificationChannel(channel);
+                  }
+              }
+
+              private Notification buildNotification() {
+                  Intent openIntent = new Intent(this, MainActivity.class);
+                  openIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                  int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                      ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                      : PendingIntent.FLAG_UPDATE_CURRENT;
+                  PendingIntent pendingIntentOpen = PendingIntent.getActivity(this, 100, openIntent, piFlags);
+
+                  Intent prevIntent = new Intent(this, AudioForegroundService.class).setAction("ACTION_PREV");
+                  PendingIntent piPrev = PendingIntent.getService(this, 101, prevIntent, piFlags);
+
+                  Intent toggleIntent = new Intent(this, AudioForegroundService.class).setAction("ACTION_TOGGLE");
+                  PendingIntent piToggle = PendingIntent.getService(this, 102, toggleIntent, piFlags);
+
+                  Intent nextIntent = new Intent(this, AudioForegroundService.class).setAction("ACTION_NEXT");
+                  PendingIntent piNext = PendingIntent.getService(this, 103, nextIntent, piFlags);
+
+                  Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                      ? new Notification.Builder(this, CHANNEL_ID)
+                      : new Notification.Builder(this);
+
+                  builder.setContentTitle(currentTitle)
+                      .setContentText(currentArtist)
+                      .setSubText(currentAlbum)
+                      .setContentIntent(pendingIntentOpen)
+                      .setSmallIcon(android.R.drawable.ic_media_play)
+                      .setVisibility(Notification.VISIBILITY_PUBLIC)
+                      .setOngoing(isPlaying);
+
+                  if (currentCoverBitmap != null) {
+                      builder.setLargeIcon(currentCoverBitmap);
+                  }
+
+                  Notification.Action prevAction = new Notification.Action.Builder(
+                      android.R.drawable.ic_media_previous,
+                      "Previous",
+                      piPrev
+                  ).build();
+
+                  Notification.Action toggleAction = new Notification.Action.Builder(
+                      isPlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
+                      isPlaying ? "Pause" : "Play",
+                      piToggle
+                  ).build();
+
+                  Notification.Action nextAction = new Notification.Action.Builder(
+                      android.R.drawable.ic_media_next,
+                      "Next",
+                      piNext
+                  ).build();
+
+                  builder.addAction(prevAction);
+                  builder.addAction(toggleAction);
+                  builder.addAction(nextAction);
+
+                  if (mediaSession != null) {
+                      Notification.MediaStyle style = new Notification.MediaStyle()
+                          .setMediaSession(mediaSession.getSessionToken())
+                          .setShowActionsInCompactView(0, 1, 2);
+                      builder.setStyle(style);
+                  }
+
+                  return builder.build();
+              }
+
+              private void updateNotificationAndSession(String title, String artist, String album, String coverUrl, boolean playing, long position, long duration) {
+                  if (title != null && !title.isEmpty()) currentTitle = title;
+                  if (artist != null && !artist.isEmpty()) currentArtist = artist;
+                  if (album != null && !album.isEmpty()) currentAlbum = album;
+                  isPlaying = playing;
+                  currentPosition = position;
+                  currentDuration = duration;
+
+                  if (mediaSession != null) {
+                      try {
+                          PlaybackState.Builder psb = new PlaybackState.Builder()
+                              .setState(
+                                  isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+                                  currentPosition * 1000L,
+                                  1.0f
+                              )
+                              .setActions(
+                                  PlaybackState.ACTION_PLAY |
+                                  PlaybackState.ACTION_PAUSE |
+                                  PlaybackState.ACTION_PLAY_PAUSE |
+                                  PlaybackState.ACTION_SKIP_TO_NEXT |
+                                  PlaybackState.ACTION_SKIP_TO_PREVIOUS |
+                                  PlaybackState.ACTION_SEEK_TO
+                              );
+                          mediaSession.setPlaybackState(psb.build());
+
+                          MediaMetadata.Builder mmb = new MediaMetadata.Builder()
+                              .putString(MediaMetadata.METADATA_KEY_TITLE, currentTitle)
+                              .putString(MediaMetadata.METADATA_KEY_ARTIST, currentArtist)
+                              .putString(MediaMetadata.METADATA_KEY_ALBUM, currentAlbum)
+                              .putLong(MediaMetadata.METADATA_KEY_DURATION, currentDuration * 1000L);
+                          if (currentCoverBitmap != null) {
+                              mmb.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, currentCoverBitmap);
+                              mmb.putBitmap(MediaMetadata.METADATA_KEY_ART, currentCoverBitmap);
+                          }
+                          mediaSession.setMetadata(mmb.build());
+                      } catch (Exception ignored) {}
+                  }
+
+                  Notification n = buildNotification();
+                  if (notificationManager != null) {
+                      try {
+                          notificationManager.notify(NOTIFICATION_ID, n);
+                      } catch (Exception ignored) {}
+                  }
+
+                  if (coverUrl != null && !coverUrl.isEmpty() && !coverUrl.equals(currentCoverUrl)) {
+                      currentCoverUrl = coverUrl;
+                      new Thread(() -> {
+                          Bitmap bmp = downloadBitmap(currentCoverUrl);
+                          if (bmp != null) {
+                              currentCoverBitmap = bmp;
+                              mainHandler.post(() -> {
+                                  if (mediaSession != null) {
+                                      try {
+                                          MediaMetadata.Builder mmb = new MediaMetadata.Builder()
+                                              .putString(MediaMetadata.METADATA_KEY_TITLE, currentTitle)
+                                              .putString(MediaMetadata.METADATA_KEY_ARTIST, currentArtist)
+                                              .putString(MediaMetadata.METADATA_KEY_ALBUM, currentAlbum)
+                                              .putLong(MediaMetadata.METADATA_KEY_DURATION, currentDuration * 1000L)
+                                              .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, currentCoverBitmap)
+                                              .putBitmap(MediaMetadata.METADATA_KEY_ART, currentCoverBitmap);
+                                          mediaSession.setMetadata(mmb.build());
+                                      } catch (Exception ignored) {}
+                                  }
+                                  Notification notif = buildNotification();
+                                  if (notificationManager != null) {
+                                      try {
+                                          notificationManager.notify(NOTIFICATION_ID, notif);
+                                      } catch (Exception ignored) {}
+                                  }
+                              });
+                          }
+                      }).start();
+                  }
+              }
+
+              private Bitmap downloadBitmap(String urlStr) {
+                  try {
+                      URL url = new URL(urlStr);
+                      HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                      conn.setConnectTimeout(4000);
+                      conn.setReadTimeout(4000);
+                      conn.setDoInput(true);
+                      conn.connect();
+                      InputStream is = conn.getInputStream();
+                      Bitmap bmp = BitmapFactory.decodeStream(is);
+                      is.close();
+                      conn.disconnect();
+                      if (bmp != null) {
+                          return Bitmap.createScaledBitmap(bmp, 256, 256, true);
+                      }
+                  } catch (Exception ignored) {}
+                  return null;
               }
 
               @Override
               public int onStartCommand(Intent intent, int flags, int startId) {
-                  try {
-                      NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm != null) {
-                          NotificationChannel channel = new NotificationChannel(
-                              CHANNEL_ID,
-                              "Spudaypay Background Playback",
-                              NotificationManager.IMPORTANCE_LOW
-                          );
-                          channel.setDescription("Keeps Spudaypay music playing while switching apps");
-                          nm.createNotificationChannel(channel);
+                  if (intent != null && intent.getAction() != null) {
+                      String action = intent.getAction();
+                      if ("ACTION_TOGGLE".equals(action)) {
+                          MainActivity.sendPlayerCommand("window.togglePlayPause && window.togglePlayPause();");
+                      } else if ("ACTION_PLAY".equals(action)) {
+                          MainActivity.sendPlayerCommand("window.playTrack && window.playTrack();");
+                      } else if ("ACTION_PAUSE".equals(action)) {
+                          MainActivity.sendPlayerCommand("window.pauseTrack && window.pauseTrack();");
+                      } else if ("ACTION_NEXT".equals(action)) {
+                          MainActivity.sendPlayerCommand("window.playNextTrack && window.playNextTrack();");
+                      } else if ("ACTION_PREV".equals(action)) {
+                          MainActivity.sendPlayerCommand("window.playPrevTrack && window.playPrevTrack();");
+                      } else if ("ACTION_SEEK".equals(action)) {
+                          long sec = intent.getLongExtra("seconds", 0);
+                          MainActivity.sendPlayerCommand("window.seekTo && window.seekTo(" + sec + ");");
+                      } else if ("UPDATE_TRACK".equals(action)) {
+                          String title = intent.getStringExtra("title");
+                          String artist = intent.getStringExtra("artist");
+                          String album = intent.getStringExtra("album");
+                          String coverUrl = intent.getStringExtra("coverUrl");
+                          boolean isPlayingState = intent.getBooleanExtra("isPlaying", false);
+                          long pos = intent.getLongExtra("position", 0);
+                          long dur = intent.getLongExtra("duration", 0);
+                          updateNotificationAndSession(title, artist, album, coverUrl, isPlayingState, pos, dur);
                       }
+                  }
 
-                      Intent openIntent = new Intent(this, MainActivity.class);
-                      openIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                      int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                          ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
-                          : PendingIntent.FLAG_UPDATE_CURRENT;
-                      PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, openIntent, piFlags);
-
-                      Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                          ? new Notification.Builder(this, CHANNEL_ID)
-                          : new Notification.Builder(this);
-
-                      Notification notification = builder
-                          .setContentTitle("Spudaypay Music")
-                          .setContentText("Background audio playback active")
-                          .setSmallIcon(android.R.drawable.ic_media_play)
-                          .setContentIntent(pendingIntent)
-                          .setOngoing(true)
-                          .build();
-
+                  Notification notification = buildNotification();
+                  try {
                       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                          startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+                          startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
                       } else {
-                          startForeground(1001, notification);
+                          startForeground(NOTIFICATION_ID, notification);
                       }
                   } catch (Exception ignored) {}
+
                   return START_STICKY;
               }
 
               @Override
               public void onDestroy() {
+                  if (mediaSession != null) {
+                      try {
+                          mediaSession.setActive(false);
+                          mediaSession.release();
+                      } catch (Exception ignored) {}
+                  }
                   if (wakeLock != null && wakeLock.isHeld()) {
                       try { wakeLock.release(); } catch (Exception ignored) {}
                   }
@@ -174,20 +414,62 @@ jobs:
           import android.net.Uri;
           import android.os.Environment;
           import android.webkit.URLUtil;
+          import android.webkit.JavascriptInterface;
           import android.widget.Toast;
           import com.getcapacitor.BridgeActivity;
 
           public class MainActivity extends BridgeActivity {
+              private static MainActivity instance;
               private PowerManager.WakeLock wakeLock;
+
+              public static MainActivity getInstance() {
+                  return instance;
+              }
+
+              public static void sendPlayerCommand(String command) {
+                  if (instance != null && instance.bridge != null && instance.bridge.getWebView() != null) {
+                      instance.runOnUiThread(() -> {
+                          try {
+                              instance.bridge.getWebView().evaluateJavascript(command, null);
+                          } catch (Exception ignored) {}
+                      });
+                  }
+              }
+
+              public class AndroidMediaBridge {
+                  @JavascriptInterface
+                  public void updateMedia(String title, String artist, String album, String coverUrl, boolean isPlaying, long position, long duration) {
+                      try {
+                          Intent intent = new Intent(MainActivity.this, AudioForegroundService.class);
+                          intent.setAction("UPDATE_TRACK");
+                          intent.putExtra("title", title);
+                          intent.putExtra("artist", artist);
+                          intent.putExtra("album", album);
+                          intent.putExtra("coverUrl", coverUrl);
+                          intent.putExtra("isPlaying", isPlaying);
+                          intent.putExtra("position", position);
+                          intent.putExtra("duration", duration);
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                              startForegroundService(intent);
+                          } else {
+                              startService(intent);
+                          }
+                      } catch (Exception ignored) {}
+                  }
+              }
 
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+                  instance = this;
+
                   if (this.bridge != null && this.bridge.getWebView() != null) {
                       this.bridge.getWebView().clearCache(true);
                       this.bridge.getWebView().setHorizontalScrollBarEnabled(false);
                       this.bridge.getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
                       this.bridge.getWebView().getSettings().setJavaScriptCanOpenWindowsAutomatically(true);
+
+                      this.bridge.getWebView().addJavascriptInterface(new AndroidMediaBridge(), "AndroidMediaBridge");
 
                       this.bridge.getWebView().setDownloadListener(new DownloadListener() {
                           @Override
@@ -216,6 +498,12 @@ jobs:
                               } catch (Exception ignored) {}
                           }
                       });
+                  }
+
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                      if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                          requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1001);
+                      }
                   }
 
                   try {

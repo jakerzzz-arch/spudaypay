@@ -46,13 +46,43 @@ function syncPlayerBarMetadata(track) {
   if (totalDurationLabel) totalDurationLabel.textContent = formatTime(track.duration || 0);
   highlightActiveTrackInTables(track.id);
 
+  syncSystemMedia(true);
+}
+
+let lastSystemMediaSync = 0;
+function syncSystemMedia(forceImmediate = false) {
+  const current = getActiveTrack();
+  if (!current) return;
+
+  const now = Date.now();
+  if (!forceImmediate && (now - lastSystemMediaSync < 1000)) {
+    return;
+  }
+  lastSystemMediaSync = now;
+
+  const title = current.title || 'Unknown Title';
+  const artist = current.artist || 'Unknown Artist';
+  const album = current.album || 'Spudaypay';
+  const coverSrc = current.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=512&h=512&fit=crop';
+  const playing = !!isPlaying;
+
+  let curPos = 0;
+  let curDur = Number(current.duration) || 0;
+  if (activeEngine === 'yt' && ytPlayerReady && ytPlayer) {
+    try { curPos = ytPlayer.getCurrentTime ? (ytPlayer.getCurrentTime() || 0) : 0; } catch (_) {}
+    try { const d = ytPlayer.getDuration ? ytPlayer.getDuration() : 0; if (d > 0) curDur = d; } catch (_) {}
+  } else if (audio) {
+    try { curPos = audio.currentTime || 0; } catch (_) {}
+    try { if (audio.duration && isFinite(audio.duration)) curDur = audio.duration; } catch (_) {}
+  }
+
+  // 1. Web Media Session API
   if ('mediaSession' in navigator) {
     try {
-      const coverSrc = track.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=512&h=512&fit=crop';
       navigator.mediaSession.metadata = new MediaMetadata({
-        title: track.title || 'Unknown Title',
-        artist: track.artist || 'Unknown Artist',
-        album: track.album || 'Spudaypay',
+        title: title,
+        artist: artist,
+        album: album,
         artwork: [
           { src: coverSrc, sizes: '96x96', type: 'image/jpeg' },
           { src: coverSrc, sizes: '128x128', type: 'image/jpeg' },
@@ -61,8 +91,32 @@ function syncPlayerBarMetadata(track) {
           { src: coverSrc, sizes: '512x512', type: 'image/jpeg' }
         ]
       });
+      navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+
+      if ('setPositionState' in navigator.mediaSession && curDur > 0) {
+        navigator.mediaSession.setPositionState({
+          duration: Math.max(1, curDur),
+          playbackRate: 1,
+          position: Math.min(Math.max(0, curPos), curDur)
+        });
+      }
     } catch (_) {}
   }
+
+  // 2. Android Native Media Bridge (Capacitor BridgeActivity)
+  try {
+    if (window.AndroidMediaBridge && typeof window.AndroidMediaBridge.updateMedia === 'function') {
+      window.AndroidMediaBridge.updateMedia(
+        title,
+        artist,
+        album,
+        coverSrc,
+        playing,
+        Math.round(curPos),
+        Math.round(curDur)
+      );
+    }
+  } catch (_) {}
 }
 
 const DEFAULT_SPOTIFY_SECTIONS = [
@@ -620,9 +674,6 @@ async function deleteOfflineAudio(key) {
 }
 
 function updateMediaSessionState(isPlayingState) {
-  if ('mediaSession' in navigator) {
-    navigator.mediaSession.playbackState = isPlayingState ? 'playing' : 'paused';
-  }
   if (isPlayingState) {
     ensureBgAudioKeepalive();
     if (bgAnchorAudio) {
@@ -633,6 +684,7 @@ function updateMediaSessionState(isPlayingState) {
       bgAnchorAudio.pause();
     }
   }
+  syncSystemMedia(true);
 }
 
 function startYtProgressLoop() {
@@ -648,15 +700,7 @@ function startYtProgressLoop() {
       currentTimeLabel.textContent = formatTime(cur);
       totalDurationLabel.textContent = formatTime(dur);
 
-      if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-        try {
-          navigator.mediaSession.setPositionState({
-            duration: Math.max(1, dur),
-            playbackRate: 1,
-            position: Math.min(cur, dur)
-          });
-        } catch (_) {}
-      }
+      syncSystemMedia(false);
     }
   }, 500);
 }
@@ -1574,16 +1618,7 @@ function setupAudioEvents() {
     progressBarFill.style.width = `${progress}%`;
     progressThumb.style.left = `${progress}%`;
     currentTimeLabel.textContent = formatTime(audio.currentTime);
-
-    if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-      try {
-        navigator.mediaSession.setPositionState({
-          duration: Math.max(1, audio.duration),
-          playbackRate: 1,
-          position: Math.min(audio.currentTime, audio.duration)
-        });
-      } catch (_) {}
-    }
+    syncSystemMedia(false);
   });
 
   audio.addEventListener('loadedmetadata', () => {
@@ -1676,22 +1711,59 @@ function setupAudioEvents() {
   // Windows & Android Media Session Action Handlers
   if ('mediaSession' in navigator) {
     try {
-      navigator.mediaSession.setActionHandler('play', playTrack);
-      navigator.mediaSession.setActionHandler('pause', pauseTrack);
-      navigator.mediaSession.setActionHandler('previoustrack', playPrevTrack);
-      navigator.mediaSession.setActionHandler('nexttrack', playNextTrack);
+      navigator.mediaSession.setActionHandler('play', () => playTrack());
+      navigator.mediaSession.setActionHandler('pause', () => pauseTrack());
+      navigator.mediaSession.setActionHandler('previoustrack', () => playPrevTrack());
+      navigator.mediaSession.setActionHandler('nexttrack', () => playNextTrack());
       navigator.mediaSession.setActionHandler('seekto', (details) => {
-        if (details.seekTime !== undefined) {
-          if (activeEngine === 'yt' && ytPlayerReady && ytPlayer && ytPlayer.seekTo) {
-            ytPlayer.seekTo(details.seekTime, true);
-          } else if (audio.duration) {
-            audio.currentTime = details.seekTime;
-          }
+        if (details && details.seekTime !== undefined) {
+          seekTo(details.seekTime);
         }
       });
+      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+        const skip = (details && details.seekOffset) ? details.seekOffset : 10;
+        const cur = (activeEngine === 'yt' && ytPlayerReady && ytPlayer && ytPlayer.getCurrentTime)
+          ? (ytPlayer.getCurrentTime() || 0)
+          : (audio ? (audio.currentTime || 0) : 0);
+        seekTo(Math.max(0, cur - skip));
+      });
+      navigator.mediaSession.setActionHandler('seekforward', (details) => {
+        const skip = (details && details.seekOffset) ? details.seekOffset : 10;
+        const cur = (activeEngine === 'yt' && ytPlayerReady && ytPlayer && ytPlayer.getCurrentTime)
+          ? (ytPlayer.getCurrentTime() || 0)
+          : (audio ? (audio.currentTime || 0) : 0);
+        seekTo(cur + skip);
+      });
+      navigator.mediaSession.setActionHandler('stop', () => pauseTrack());
     } catch (_) {}
   }
 }
+
+function seekTo(seconds) {
+  const target = Math.max(0, Number(seconds) || 0);
+  if (activeEngine === 'yt' && ytPlayerReady && ytPlayer && ytPlayer.seekTo) {
+    try {
+      ytPlayer.seekTo(target, true);
+    } catch (_) {}
+  } else if (audio) {
+    try {
+      if (audio.duration && isFinite(audio.duration)) {
+        audio.currentTime = Math.min(target, audio.duration);
+      } else {
+        audio.currentTime = target;
+      }
+    } catch (_) {}
+  }
+  syncSystemMedia(true);
+}
+
+// Global player bindings for native Android media notifications and IPC
+window.playTrack = playTrack;
+window.pauseTrack = pauseTrack;
+window.togglePlayPause = togglePlayPause;
+window.playNextTrack = playNextTrack;
+window.playPrevTrack = playPrevTrack;
+window.seekTo = seekTo;
 
 // Control Buttons & Scrubber Handlers
 function setupControls() {
