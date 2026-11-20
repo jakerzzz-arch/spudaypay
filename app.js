@@ -828,8 +828,9 @@ const VERSION_TAGS = [
 
 function cleanTitleForMatching(title) {
   return String(title || '')
-    .replace(/\s*[\(\[]\s*(?:clean\s+ver|clean\s+version|clean|explicit|deluxe|feat\.?|featuring|remastered|version)\b[^\)\]]*[\)\]]/gi, '')
-    .replace(/\s*-\s*(?:clean\s+ver|clean\s+version|clean|explicit|deluxe|remastered)\b/gi, '')
+    .replace(/\s*[\(\[][^\)\]]*(?:clean|explicit|deluxe|feat|featuring|remaster|version|anniversary|single|radio edit|bonus)[^\)\]]*[\)\]]/gi, '')
+    .replace(/\s*[\(\[][^\)\]]*[\)\]]/gi, '')
+    .replace(/\s*-\s*(?:clean|clean ver|clean version|explicit|deluxe|remastered|single).*$/gi, '')
     .trim();
 }
 
@@ -1120,12 +1121,15 @@ async function resolveYouTubeVideoIds(trackOrQuery, expectedDuration = 0, signal
 
 function findMatchingCuratedTrack(title, artist) {
   const tNorm = normalizeStr(title);
+  const tClean = normalizeStr(cleanTitleForMatching(title));
   if (!tNorm || !artist) return null;
 
   return CURATED_TRACKS.find(c => {
     if (hasMismatchedVersionTag(title, c.title, c.album)) return false;
     const ct = normalizeStr(c.title);
-    return ct === tNorm && isPrimaryArtistMatch(c.artist, artist);
+    const ctClean = normalizeStr(cleanTitleForMatching(c.title));
+    const titleMatch = (ct === tNorm || ctClean === tClean || ct === tClean || ctClean === tNorm);
+    return titleMatch && isPrimaryArtistMatch(c.artist, artist);
   }) || null;
 }
 
@@ -2008,23 +2012,31 @@ async function resolveDownloadAudioUrl(track) {
   }
 
   // 4. Query authorized high-fidelity catalog (JioSaavn 320kbps MP4 direct downloads)
-  const cleanTitle = normalizeStr(track.title) || track.title;
+  const cleanTitle = normalizeStr(cleanTitleForMatching(track.title)) || normalizeStr(track.title) || track.title;
   const cleanArtist = getPrimaryArtistNorm(track.artist) || track.artist;
-  try {
-    const fullTracks = await fetchFullLengthTracks(`${cleanTitle} ${cleanArtist}`, null, track.title, track.artist, track.duration);
-    const exactMatch = fullTracks.find(m => isExactSongMatch(m, track.title, track.artist, track.duration));
-    if (exactMatch && exactMatch.streamUrl && exactMatch.streamUrl.startsWith('http') && !exactMatch.streamUrl.includes('itunes.apple.com')) {
-      track.verifiedFullAudioUrl = exactMatch.streamUrl;
-      track.downloadUrl = exactMatch.streamUrl;
-      track.audioExt = 'mp4';
-      return {
-        type: 'url',
-        url: exactMatch.streamUrl,
-        ext: 'mp4',
-        source: 'saavn-320k'
-      };
-    }
-  } catch (_) {}
+  const queriesToTry = [
+    `${cleanTitle} ${cleanArtist}`,
+    `${cleanArtist} ${cleanTitle}`,
+    `${cleanTitle}`
+  ];
+
+  for (const q of queriesToTry) {
+    try {
+      const fullTracks = await fetchFullLengthTracks(q, null, track.title, track.artist, track.duration);
+      const exactMatch = fullTracks.find(m => isExactSongMatch(m, track.title, track.artist, track.duration));
+      if (exactMatch && exactMatch.streamUrl && exactMatch.streamUrl.startsWith('http') && !exactMatch.streamUrl.includes('itunes.apple.com')) {
+        track.verifiedFullAudioUrl = exactMatch.streamUrl;
+        track.downloadUrl = exactMatch.streamUrl;
+        track.audioExt = 'mp4';
+        return {
+          type: 'url',
+          url: exactMatch.streamUrl,
+          ext: 'mp4',
+          source: 'saavn-320k'
+        };
+      }
+    } catch (_) {}
+  }
 
   // 5. Check if it's YouTube streaming catalog (streaming only)
   if (track.ytVideoId || (track.sourceCatalog && track.sourceCatalog.toLowerCase().includes('streaming'))) {
@@ -3024,15 +3036,40 @@ async function fetchFromMultipleCatalogs(query, offset = 0) {
   const pDeezer = fetchWithTimeout(`https://api.deezer.com/search?q=${encQ}&limit=35&index=${offset}`, {}, 4500)
     .then(r => r.json()).catch(() => null);
 
-  // 4. Invidious companion (on initial page)
+  // 4. JioSaavn 320k Catalog - authorized high-fidelity studio catalog with direct downloads
+  const pSaavn = fetchFullLengthTracks(cleanQ).catch(() => []);
+
+  // 5. Invidious companion (on initial page)
   const pInv = (offset === 0)
     ? fetchWithTimeout(`https://yt.chocolatemoo53.com/api/v1/search?q=${encQ}&type=video`, {}, 5000)
         .then(r => r.json()).catch(() => null)
     : Promise.resolve(null);
 
-  const [resPH, resGlobal, resDeezer, resInv] = await Promise.all([pItunesPH, pItunesGlobal, pDeezer, pInv]);
+  const [resPH, resGlobal, resDeezer, resInv, resSaavn] = await Promise.all([pItunesPH, pItunesGlobal, pDeezer, pInv, pSaavn]);
 
   const rawTracks = [];
+
+  // Parse JioSaavn 320k (prioritized full-length studio tracks with authorized downloads)
+  if (Array.isArray(resSaavn)) {
+    for (const item of resSaavn) {
+      if (!item || !item.title || !item.streamUrl) continue;
+      rawTracks.push({
+        id: item.id || `saavn-${Date.now()}-${Math.random()}`,
+        title: item.title,
+        artist: item.artist,
+        album: item.album || item.title,
+        duration: item.duration || 210,
+        cover: item.cover || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop',
+        streamUrl: item.streamUrl,
+        downloadUrl: item.streamUrl,
+        verifiedFullAudioUrl: item.streamUrl,
+        audioExt: 'mp4',
+        sourceCatalog: 'JioSaavn 320k',
+        needsFullResolve: false,
+        resolvedFull: true
+      });
+    }
+  }
 
   // Parse iTunes PH
   if (resPH && Array.isArray(resPH.results)) {
@@ -3227,8 +3264,10 @@ async function performSearch(query, isLoadMore = false) {
 function renderTableRows(tableBody, tracks) {
   tableBody.innerHTML = '';
   const activeTrack = getActiveTrack();
+  const downloadedList = getDownloadedTracks();
   tracks.forEach((track, idx) => {
     const isLiked = likedSongs.has(track.id);
+    const isDownloaded = downloadedList.some(d => isSameDownloadedTrack(d, track));
     const row = document.createElement('tr');
     row.setAttribute('data-track-id', track.id);
     if (activeTrack && activeTrack.id === track.id) {
@@ -3244,6 +3283,10 @@ function renderTableRows(tableBody, tracks) {
         : `<span class="track-badge badge-catalog" title="Online Catalog Match">CATALOG</span>`);
 
     const sourceTag = track.sourceCatalog ? `<span class="track-catalog-source">• ${track.sourceCatalog}</span>` : '';
+
+    const dlSvg = isDownloaded
+      ? `<svg viewBox="0 0 24 24" fill="none" stroke="#1db954" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
 
     row.innerHTML = `
       <td class="table-index">${idx + 1}</td>
@@ -3261,8 +3304,8 @@ function renderTableRows(tableBody, tracks) {
         <button class="btn-like ${isLiked ? 'liked' : ''}" data-like-id="${track.id}" title="Like">
           <svg viewBox="0 0 24 24" fill="${isLiked ? '#ec4899' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
         </button>
-        <button class="btn-like btn-table-dl" title="Download MP3" style="margin-left: 6px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <button class="btn-like btn-table-dl ${isDownloaded ? 'downloaded' : ''}" title="${isDownloaded ? 'Downloaded (Offline Ready)' : 'Download Full Track'}" style="margin-left: 6px; ${isDownloaded ? 'color: var(--accent-green);' : ''}">
+          ${dlSvg}
         </button>
       </td>
       <td style="text-align: right; color: var(--text-dim)">${formatTime(track.duration || 0)}</td>
@@ -3290,9 +3333,26 @@ function renderTableRows(tableBody, tracks) {
     // Download click
     const dlBtn = row.querySelector('.btn-table-dl');
     if (dlBtn) {
-      dlBtn.addEventListener('click', (e) => {
+      dlBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        triggerSongDownload(track);
+        if (dlBtn.classList.contains('downloading')) return;
+        dlBtn.classList.add('downloading');
+        dlBtn.innerHTML = `<span style="display:inline-block; width:14px; height:14px; border:2px solid #888; border-top-color:#1db954; border-radius:50%; animation:spin 0.8s linear infinite;"></span>`;
+        try {
+          await triggerSongDownload(track);
+          const updatedDownloads = getDownloadedTracks();
+          const savedNow = updatedDownloads.some(d => isSameDownloadedTrack(d, track));
+          if (savedNow) {
+            dlBtn.classList.add('downloaded');
+            dlBtn.style.color = 'var(--accent-green)';
+            dlBtn.title = 'Downloaded (Offline Ready)';
+            dlBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="#1db954" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+          } else {
+            dlBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
+          }
+        } finally {
+          dlBtn.classList.remove('downloading');
+        }
       });
     }
 

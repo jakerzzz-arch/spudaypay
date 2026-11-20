@@ -4537,6 +4537,48 @@ const CURATED_TRACKS = [
     "streamUrl": "https://raw.githubusercontent.com/jakerzzz-arch/spudaypay/main/audio/track-217.webm",
     "downloadUrl": "https://raw.githubusercontent.com/jakerzzz-arch/spudaypay/main/audio/track-217.webm",
     "verifiedFullAudioUrl": "https://raw.githubusercontent.com/jakerzzz-arch/spudaypay/main/audio/track-217.webm"
+  },
+  {
+    "id": "track-218",
+    "title": "Closer",
+    "artist": "GEHLEE",
+    "album": "Closer - Single",
+    "genre": "opm",
+    "category": "opmhits",
+    "duration": 163,
+    "cover": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts126/v4/79/44/5f/79445f2a-784f-ac4f-e61e-075d0758c191/mza_1120508120476844709.jpg/600x600bb.jpg",
+    "ytVideoId": "NdTkwxyZ24M",
+    "ytCandidateIds": [
+      "NdTkwxyZ24M",
+      "_y6IgF3wbv4",
+      "C8cktkSNbJc"
+    ],
+    "resolvedFull": true,
+    "preview": false,
+    "streamUrl": "https://raw.githubusercontent.com/jakerzzz-arch/spudaypay/main/audio/track-218.webm",
+    "downloadUrl": "https://raw.githubusercontent.com/jakerzzz-arch/spudaypay/main/audio/track-218.webm",
+    "verifiedFullAudioUrl": "https://raw.githubusercontent.com/jakerzzz-arch/spudaypay/main/audio/track-218.webm"
+  },
+  {
+    "id": "track-219",
+    "title": "TORPE",
+    "artist": "JAO",
+    "album": "TORPE - Single",
+    "genre": "opm",
+    "category": "opmhits",
+    "duration": 173,
+    "cover": "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&h=600&fit=crop",
+    "ytVideoId": "9OyZznPFCeo",
+    "ytCandidateIds": [
+      "9OyZznPFCeo",
+      "gdVQqto4exg",
+      "b1e6VkeAsII"
+    ],
+    "resolvedFull": true,
+    "preview": false,
+    "streamUrl": "https://raw.githubusercontent.com/jakerzzz-arch/spudaypay/main/audio/track-219.webm",
+    "downloadUrl": "https://raw.githubusercontent.com/jakerzzz-arch/spudaypay/main/audio/track-219.webm",
+    "verifiedFullAudioUrl": "https://raw.githubusercontent.com/jakerzzz-arch/spudaypay/main/audio/track-219.webm"
   }
 ];
 
