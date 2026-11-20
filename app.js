@@ -67,10 +67,13 @@ function syncPlayerBarMetadata(track) {
 
 const DEFAULT_SPOTIFY_SECTIONS = [
   { id: "tophits", title: "Today's Top Hits", subtitle: "The hottest tracks on the planet right now", tag: "Billboard Hot 100", genre: "pop" },
+  { id: "trending2025", title: "Viral & New Wave Hits", subtitle: "Trending internet & chart sensations", tag: "Viral Hits", genre: "trending" },
   { id: "charts", title: "Global Chart Toppers", subtitle: "Record-breaking anthems with billions of plays", tag: "Global 50", genre: "synthwave" },
   { id: "pop", title: "Pop & Dance Anthems", subtitle: "High energy chart-toppers to power your day", tag: "Party", genre: "pop" },
-  { id: "hiphop", title: "Hip-Hop & Late Night R&B", subtitle: "Heavy bass, midnight mood tracks and global trap", tag: "Late Night", genre: "hiphop" },
-  { id: "chill", title: "Chill Lo-Fi & Coffee Beats", subtitle: "Relax, study and unwind with smooth laidback melodies", tag: "Relaxing", genre: "lofi" },
+  { id: "rnb", title: "R&B Soul & Midnight Vibes", subtitle: "Smooth vocals, late night groove & soul", tag: "R&B Soul", genre: "rnb" },
+  { id: "opm", title: "OPM & Asian Favorites", subtitle: "Beloved regional & indie chart hits", tag: "OPM & Asian", genre: "opm" },
+  { id: "hiphop", title: "Hip-Hop & Late Night Trap", subtitle: "Heavy bass, midnight mood tracks and global rap", tag: "Late Night", genre: "hiphop" },
+  { id: "chill", title: "Chill Lo-Fi & Indie Vibes", subtitle: "Relax, study and unwind with smooth melodies", tag: "Relaxing", genre: "lofi" },
   { id: "classics", title: "Rock & Timeless Classics", subtitle: "Legendary stadium anthems that live forever", tag: "Legendary", genre: "rock" }
 ];
 
@@ -234,9 +237,103 @@ function startYtVideoWithWatchdog(videoId, autoPlay = true) {
   }
 }
 
+const INVIDIOUS_INSTANCES = ['https://yt.chocolatemoo53.com'];
+let invidiousDiscoveryDone = false;
+
+async function getHealthyInvidiousInstances() {
+  if (!invidiousDiscoveryDone) {
+    invidiousDiscoveryDone = true;
+    fetchWithTimeout('https://api.invidious.io/instances.json?sort_by=type,users', {}, 3000)
+      .then(r => r.ok ? r.json() : null)
+      .then(list => {
+        if (!Array.isArray(list)) return;
+        for (const entry of list) {
+          const info = entry && entry[1];
+          if (info && info.type === 'https' && info.api && info.uri) {
+            const clean = String(info.uri).replace(/\/$/, '');
+            if (!INVIDIOUS_INSTANCES.includes(clean)) INVIDIOUS_INSTANCES.push(clean);
+          }
+        }
+      })
+      .catch(() => {});
+  }
+  return INVIDIOUS_INSTANCES;
+}
+
+async function resolveDirectAudioFromVideoIds(videoIds, targetTitle = '', targetArtist = '', targetDuration = 0, signal = null) {
+  const ids = (Array.isArray(videoIds) ? videoIds : [videoIds]).filter(Boolean).slice(0, 4);
+  if (ids.length === 0) return null;
+
+  const hosts = await getHealthyInvidiousInstances();
+  for (const videoId of ids) {
+    for (const host of hosts.slice(0, 4)) {
+      try {
+        const res = await fetchWithTimeout(`${host}/api/v1/videos/${videoId}`, { signal }, 4500);
+        if (!res.ok) continue;
+        const data = await res.json();
+        const dur = Number(data?.lengthSeconds) || 0;
+        if (dur > 0 && (dur < 80 || dur > 600)) continue;
+        if (targetDuration > 85 && dur > 0 && Math.abs(dur - targetDuration) > 40) continue;
+        if (targetTitle && hasMismatchedVersionTag(targetTitle, data?.title || '', data?.author || '')) continue;
+
+        const formats = Array.isArray(data?.adaptiveFormats) ? data.adaptiveFormats : [];
+        const audioFormats = formats.filter(f => f && f.type && f.type.startsWith('audio/'));
+        // Prefer MPEG-4 AAC (itag 140 / 139) for 100% universal Android WebView <audio> compatibility, then Opus WebM (251/250/249)
+        const preferredItags = ['140', '139', '251', '250', '249'];
+        let chosen = null;
+        for (const itag of preferredItags) {
+          chosen = audioFormats.find(f => String(f.itag) === itag);
+          if (chosen) break;
+        }
+        if (!chosen) chosen = audioFormats[0];
+        if (!chosen) continue;
+
+        const isWebm = String(chosen.type || '').includes('webm') || ['251', '250', '249'].includes(String(chosen.itag));
+        const streamUrl = `${host}/latest_version?id=${videoId}&itag=${chosen.itag}&local=true`;
+        logAudioDiagnostics('DIRECT_STREAM_EXTRACTED', { videoId, host, itag: chosen.itag, ext: isWebm ? 'webm' : 'm4a', dur });
+        return {
+          streamUrl,
+          directVideoId: videoId,
+          duration: dur || targetDuration,
+          ext: isWebm ? 'webm' : 'm4a'
+        };
+      } catch (_) {}
+    }
+  }
+  return null;
+}
+
+async function switchHtml5Source(track, streamUrl, audioExt = null) {
+  if (!track || (currentPlayingTrack && track._sessionId !== currentPlayingTrack._sessionId)) return false;
+  activeEngine = 'html5';
+  if (ytPlayerReady && ytPlayer && ytPlayer.stopVideo) {
+    try { ytPlayer.stopVideo(); } catch (_) {}
+  }
+  track.verifiedFullAudioUrl = streamUrl;
+  track.streamUrl = streamUrl;
+  track.downloadUrl = streamUrl;
+  if (audioExt) track.audioExt = audioExt;
+  audio._loadedSessionId = track._sessionId;
+  audio.src = streamUrl;
+  syncPlayerBarMetadata(track);
+  if (!userPaused) {
+    try {
+      await audio.play();
+      setBufferingState(false);
+      syncPlayPauseUI(true);
+      return true;
+    } catch (err) {
+      logAudioDiagnostics('HTML5_SWITCH_PLAY_ERROR', { error: err?.message, streamUrl });
+      return false;
+    }
+  }
+  setBufferingState(false);
+  return true;
+}
+
 async function tryNextPlaybackSource(track) {
   clearPlaybackWatchdogs();
-  if (!track || (currentPlayingTrack && track.id !== currentPlayingTrack.id)) {
+  if (!track || (currentPlayingTrack && (track.id !== currentPlayingTrack.id || track._sessionId !== currentPlayingTrack._sessionId))) {
     setBufferingState(false);
     syncPlayPauseUI(false);
     return;
@@ -246,44 +343,41 @@ async function tryNextPlaybackSource(track) {
     title: track.title,
     artist: track.artist,
     activeEngine,
-    remainingYtCandidates: track.ytCandidateIds?.length || 0,
-    hasPreview: !!track.fallbackPreviewUrl
+    remainingYtCandidates: track.ytCandidateIds?.length || 0
   });
 
-  // 1. Try next verified YouTube candidate ID if available
-  if (Array.isArray(track.ytCandidateIds) && track.ytCandidateIds.length > 0) {
-    const nextId = track.ytCandidateIds.shift();
-    track.ytVideoId = nextId;
-    activeEngine = 'yt';
-    logAudioDiagnostics('TRYING_NEXT_YT_CANDIDATE', { nextId });
-    if (ytPlayerReady && ytPlayer && ytPlayer.loadVideoById) {
-      startYtVideoWithWatchdog(nextId, !userPaused);
-      return;
+  // 1. Try direct HTML5 audio stream extraction for next candidate video IDs first (no YouTube iframe needed!)
+  if (Array.isArray(track.ytCandidateIds) && track.ytCandidateIds.length > 0 && !track._directExtractFailed) {
+    const candidateBatch = track.ytCandidateIds.splice(0, 2);
+    track.ytVideoId = candidateBatch[0];
+    setBufferingState(true);
+    const extracted = await resolveDirectAudioFromVideoIds(candidateBatch, track.title, track.artist, track.duration);
+    if (currentPlayingTrack && track._sessionId !== currentPlayingTrack._sessionId) return;
+    if (extracted && extracted.streamUrl) {
+      const ok = await switchHtml5Source(track, extracted.streamUrl, extracted.ext);
+      if (ok) return;
     }
   }
 
-  // 2. If HTML5 failed and we haven't tried YT yet, try YT
-  if (activeEngine === 'html5' && track.ytVideoId && ytPlayerReady && ytPlayer && ytPlayer.loadVideoById) {
-    activeEngine = 'yt';
-    logAudioDiagnostics('SWITCHING_HTML5_TO_YT', { videoId: track.ytVideoId });
-    startYtVideoWithWatchdog(track.ytVideoId, !userPaused);
-    return;
-  }
-
-  // 3. Dynamically resolve fresh YouTube official audio candidates if not yet retried
+  // 2. Dynamically search fresh candidates AND extract direct HTML5 audio stream if not yet retried
   if (!track._ytSearchRetried) {
     track._ytSearchRetried = true;
     setBufferingState(true);
     try {
       logAudioDiagnostics('RETRYING_YT_SEARCH', { title: track.title, artist: track.artist });
       const videoIds = await resolveYouTubeVideoIds(track, track.duration);
-      if (currentPlayingTrack && track.id !== currentPlayingTrack.id) return;
+      if (currentPlayingTrack && track._sessionId !== currentPlayingTrack._sessionId) return;
       if (videoIds.length > 0) {
         track.ytVideoId = videoIds[0];
         track.ytCandidateIds = videoIds.slice(1);
-        activeEngine = 'yt';
-        logAudioDiagnostics('RETRY_YT_SEARCH_FOUND', { videoId: track.ytVideoId });
+        const extracted = await resolveDirectAudioFromVideoIds(videoIds, track.title, track.artist, track.duration);
+        if (currentPlayingTrack && track._sessionId !== currentPlayingTrack._sessionId) return;
+        if (extracted && extracted.streamUrl) {
+          const ok = await switchHtml5Source(track, extracted.streamUrl, extracted.ext);
+          if (ok) return;
+        }
         if (ytPlayerReady && ytPlayer && ytPlayer.loadVideoById) {
+          activeEngine = 'yt';
           startYtVideoWithWatchdog(track.ytVideoId, !userPaused);
           return;
         }
@@ -293,31 +387,16 @@ async function tryNextPlaybackSource(track) {
     }
   }
 
-  // 4. Try verified full audio URL on HTML5 engine (never play unverified or 30s preview clips as full)
-  const directUrl = track.verifiedFullAudioUrl ||
-    ((!track.needsFullResolve && track.streamUrl && !track.streamUrl.includes('itunes.apple.com')) ? track.streamUrl : null);
-  if (directUrl && audio.src !== directUrl) {
-    activeEngine = 'html5';
-    if (ytPlayerReady && ytPlayer && ytPlayer.stopVideo) {
-      try { ytPlayer.stopVideo(); } catch (_) {}
-    }
-    audio.src = directUrl;
-    logAudioDiagnostics('TRYING_DIRECT_URL', { directUrl });
-    if (!userPaused) {
-      audio.play().then(() => {
-        setBufferingState(false);
-        syncPlayPauseUI(true);
-      }).catch((err) => {
-        logAudioDiagnostics('DIRECT_URL_PLAY_ERROR', { error: err?.message });
-        setBufferingState(false);
-        syncPlayPauseUI(false);
-        fallbackToOfficialPreview(track);
-      });
-    }
+  // 3. Final backup: YouTube iframe embed if direct audio extraction was unavailable
+  if (activeEngine === 'html5' && track.ytVideoId && ytPlayerReady && ytPlayer && ytPlayer.loadVideoById && !track._triedYtEmbed) {
+    track._triedYtEmbed = true;
+    activeEngine = 'yt';
+    logAudioDiagnostics('SWITCHING_HTML5_TO_YT_BACKUP', { videoId: track.ytVideoId });
+    startYtVideoWithWatchdog(track.ytVideoId, !userPaused);
     return;
   }
 
-  // 5. If all sources exhausted, cleanly notify without downgrading to 30s snippet
+  // 4. All verified full-length sources exhausted — show unavailable notice (never downgrade to 30s preview)
   logAudioDiagnostics('ALL_SOURCES_EXHAUSTED', { title: track?.title, artist: track?.artist });
   setBufferingState(false);
   syncPlayPauseUI(false);
@@ -326,18 +405,14 @@ async function tryNextPlaybackSource(track) {
   }
 }
 
-// Initialize YouTube IFrame Audio Engine
+// Initialize YouTube IFrame Audio Engine (Secondary Fallback Engine)
 function initYtEngine() {
   if (ytPlayerReady || !window.YT || !window.YT.Player) return;
   const playerDiv = document.getElementById('ytPlayer');
   if (!playerDiv) return;
 
-  let originParam = (typeof window !== 'undefined' && window.location.origin && window.location.origin.startsWith('https://'))
-    ? window.location.origin
-    : 'https://preeminent-kitten-e39dfe.netlify.app';
-  if (originParam.includes('localhost') || originParam.startsWith('http://')) {
-    originParam = 'https://preeminent-kitten-e39dfe.netlify.app';
-  }
+  const currentOrigin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '';
+  const isPublicHttps = currentOrigin.startsWith('https://') && !currentOrigin.includes('localhost');
 
   const playerVars = {
     autoplay: 0,
@@ -346,10 +421,12 @@ function initYtEngine() {
     fs: 0,
     modestbranding: 1,
     playsinline: 1,
-    enablejsapi: 1,
-    origin: originParam,
-    widget_referrer: originParam
+    enablejsapi: 1
   };
+  if (isPublicHttps) {
+    playerVars.origin = currentOrigin;
+    playerVars.widget_referrer = currentOrigin;
+  }
 
   try {
     ytPlayer = new YT.Player('ytPlayer', {
@@ -359,7 +436,7 @@ function initYtEngine() {
       events: {
         onReady: () => {
           ytPlayerReady = true;
-          logAudioDiagnostics('YT_ON_READY', { origin: originParam });
+          logAudioDiagnostics('YT_ON_READY', { origin: isPublicHttps ? currentOrigin : 'omitted-local' });
           ytPlayer.setVolume(Math.round((previousVolume || 0.8) * 100));
           if (pendingTrackToPlay) {
             const p = pendingTrackToPlay;
@@ -621,8 +698,8 @@ function normalizeStr(s) {
     // Strip featuring clauses
     .replace(/\b(?:feat|ft|featuring)\b\.?.*$/i, '')
     // Strip parenthetical/bracketed media descriptors without killing the title
-    .replace(/[\(\[]\s*(?:official\s+audio|official\s+music\s+video|official\s+video|official\s+lyric\s+video|lyric\s+video|lyrics|audio|visualizer|hd|hq|4k|remastered|music\s+video)\s*[\)\]]/gi, ' ')
-    .replace(/\b(?:official\s+audio|official\s+music\s+video|official\s+video|lyric\s+video|visualizer)\b/gi, ' ')
+    .replace(/[\(\[]\s*(?:official\s+audio|official\s+music\s+video|official\s+video|official\s+lyric\s+video|official\s+mv|lyric\s+video|lyrics|audio|visualizer|hd|hq|4k|remastered|music\s+video|mv)\s*[\)\]]/gi, ' ')
+    .replace(/\b(?:official\s+audio|official\s+music\s+video|official\s+video|official\s+lyric\s+video|official\s+mv|lyric\s+video|visualizer|music\s+video|mv)\b/gi, ' ')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -737,8 +814,8 @@ function isYouTubeTitleMatch(rawVideoTitle, targetTitle, targetArtist) {
 
   // 2. YouTube common format: "Artist - Title" or "Title - Artist"
   const cleaned = raw
-    .replace(/[\(\[]\s*(?:official\s+audio|official\s+music\s+video|official\s+video|official\s+lyric\s+video|lyric\s+video|lyrics|audio|visualizer|hd|hq|4k|remastered|music\s+video)\s*[\)\]]/gi, ' ')
-    .replace(/\b(?:official\s+audio|official\s+music\s+video|official\s+video|lyric\s+video|visualizer)\b/gi, ' ');
+    .replace(/[\(\[]\s*(?:official\s+audio|official\s+music\s+video|official\s+video|official\s+lyric\s+video|official\s+mv|lyric\s+video|lyrics|audio|visualizer|hd|hq|4k|remastered|music\s+video|mv)\s*[\)\]]/gi, ' ')
+    .replace(/\b(?:official\s+audio|official\s+music\s+video|official\s+video|official\s+lyric\s+video|official\s+mv|lyric\s+video|visualizer|music\s+video|mv)\b/gi, ' ');
 
   const cleanedNorm = normalizeStr(cleaned);
   if (cleanedNorm === normTarget) return true;
@@ -759,14 +836,66 @@ function isYouTubeTitleMatch(rawVideoTitle, targetTitle, targetArtist) {
   return false;
 }
 
+function isArtistInVideoTitle(rawVideoTitle, targetTitle, targetArtist) {
+  if (!rawVideoTitle || !targetArtist) return false;
+  if (isPrimaryArtistMatch(rawVideoTitle, targetArtist)) return true;
+
+  const cleaned = String(rawVideoTitle)
+    .replace(/[\(\[]\s*(?:official\s+audio|official\s+music\s+video|official\s+video|official\s+lyric\s+video|official\s+mv|lyric\s+video|lyrics|audio|visualizer|hd|hq|4k|remastered|music\s+video|mv)\s*[\)\]]/gi, ' ')
+    .replace(/\b(?:official\s+audio|official\s+music\s+video|official\s+video|official\s+lyric\s+video|official\s+mv|lyric\s+video|visualizer|music\s+video|mv)\b/gi, ' ');
+
+  const segments = cleaned.split(/\s+[-–—|:]\s+/).filter(Boolean);
+  for (const seg of segments) {
+    if (isPrimaryArtistMatch(seg, targetArtist)) return true;
+  }
+
+  const normTarget = normalizeStr(targetTitle);
+  const normVideo = normalizeStr(cleaned);
+  if (normTarget && normVideo.includes(normTarget)) {
+    const escapedTitle = normTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const remainder = normVideo.replace(new RegExp(`\\b${escapedTitle}\\b`, 'i'), ' ').replace(/\s+/g, ' ').trim();
+    if (remainder && isPrimaryArtistMatch(remainder, targetArtist)) return true;
+  }
+  return false;
+}
+
+const BAD_VIDEO_REGEX = /\b(?:karaoke|instrumental|reaction|reacting|parody|tutorial|lesson|how to play|cover|covered by|drum cover|guitar cover|bass cover|piano cover|piano tutorial|teaser|preview|trailer|ringtone|compilation|greatest hits|full album|1 hour|10 hours|loop|looped|#shorts|shorts)\b/i;
+
+function scoreVideoCandidate(rawTitle, channel, durationSec, trackTitle, trackArtist, targetDuration) {
+  if (!rawTitle || BAD_VIDEO_REGEX.test(rawTitle)) return -1;
+  if (trackTitle && hasMismatchedVersionTag(trackTitle, rawTitle, channel)) return -1;
+  if (durationSec > 0 && (durationSec < 80 || durationSec > 600)) return -1;
+  if (targetDuration > 85 && durationSec > 0 && Math.abs(durationSec - targetDuration) > 40) return -1;
+
+  const normTargetTitle = normalizeStr(trackTitle);
+  if (normTargetTitle && !isYouTubeTitleMatch(rawTitle, trackTitle, trackArtist)) return -1;
+
+  const artistInChannel = isPrimaryArtistMatch(channel, trackArtist);
+  const artistInTitle = isArtistInVideoTitle(rawTitle, trackTitle, trackArtist);
+  if (!artistInChannel && !artistInTitle) return -1;
+
+  let score = 50;
+  if (normalizeStr(rawTitle) === normTargetTitle) score += 35;
+  if (/topic/i.test(channel)) score += 60;
+  if (artistInChannel) score += 30;
+  if (/official audio/i.test(rawTitle)) score += 35;
+  if (/official lyric video|lyric video|lyrics/i.test(rawTitle)) score += 20;
+  if (/official music video|official video/i.test(rawTitle)) score += 15;
+  if (targetDuration > 75 && durationSec > 0) {
+    const diff = Math.abs(durationSec - targetDuration);
+    if (diff <= 6) score += 35;
+    else if (diff <= 15) score += 20;
+    else if (diff <= 25) score += 10;
+  }
+  return score;
+}
+
 function parseYouTubeSearchCandidates(html, trackTitle = '', trackArtist = '', targetDuration = 0) {
   if (!html || typeof html !== 'string') return [];
   const candidates = [];
   const seenIds = new Set();
-  const normTargetTitle = normalizeStr(trackTitle);
-  const badVideoRegex = /\b(?:karaoke|instrumental|reaction|reacting|parody|tutorial|lesson|how to play|cover|covered by|drum cover|guitar cover|bass cover|piano cover|piano tutorial|teaser|preview|trailer|ringtone|compilation|greatest hits|full album|1 hour|10 hours|loop|looped|#shorts|shorts)\b/i;
-
   const blocks = html.split('"videoRenderer":{').slice(1);
+
   for (const b of blocks) {
     const idMatch = b.match(/^"videoId":"([a-zA-Z0-9_-]{11})"/);
     if (!idMatch) continue;
@@ -778,12 +907,8 @@ function parseYouTubeSearchCandidates(html, trackTitle = '', trackArtist = '', t
 
     const titleMatch = slice.match(/"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/);
     const rawTitle = titleMatch ? titleMatch[1].replace(/\\u0026/g, '&').replace(/\\"/g, '"') : '';
-    if (!rawTitle || badVideoRegex.test(rawTitle)) continue;
-
     const ownerMatch = slice.match(/"ownerText":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/);
     const channel = ownerMatch ? ownerMatch[1].replace(/\\u0026/g, '&') : '';
-
-    if (trackTitle && hasMismatchedVersionTag(trackTitle, rawTitle, channel)) continue;
 
     let durationSec = 0;
     const lenMatch = slice.match(/"lengthText":\{.*?"simpleText":"([0-9:]+)"/);
@@ -804,37 +929,36 @@ function parseYouTubeSearchCandidates(html, trackTitle = '', trackArtist = '', t
       }
     }
 
-    // Exclude short clips/previews (<80s) and long mixes (>600s)
-    if (durationSec > 0 && (durationSec < 80 || durationSec > 600)) continue;
-    if (targetDuration > 85 && durationSec > 0 && Math.abs(durationSec - targetDuration) > 35) continue;
-
-    if (normTargetTitle && !isYouTubeTitleMatch(rawTitle, trackTitle, trackArtist)) continue;
-
-    // Strict artist match: artist MUST match in channel or video title
-    const artistInChannel = isPrimaryArtistMatch(channel, trackArtist);
-    const artistInTitle = isPrimaryArtistMatch(rawTitle, trackArtist);
-    if (!artistInChannel && !artistInTitle) continue;
-
-    let score = 50;
-    const normTitle = normalizeStr(rawTitle);
-    if (normTitle === normTargetTitle) score += 35;
-
-    // Highest priority for official YouTube Music album track (- Topic channel)
-    if (/topic/i.test(channel)) score += 60;
-    if (artistInChannel) score += 30;
-    if (/official audio/i.test(rawTitle)) score += 35;
-    if (/official lyric video|lyric video|lyrics/i.test(rawTitle)) score += 20;
-    if (/official music video|official video/i.test(rawTitle)) score += 15;
-
-    if (targetDuration > 75 && durationSec > 0) {
-      const diff = Math.abs(durationSec - targetDuration);
-      if (diff <= 6) score += 35;
-      else if (diff <= 15) score += 20;
-      else if (diff <= 25) score += 10;
-    }
+    const score = scoreVideoCandidate(rawTitle, channel, durationSec, trackTitle, trackArtist, targetDuration);
+    if (score < 0) continue;
 
     seenIds.add(videoId);
-    candidates.push({ videoId, score, durationSec });
+    candidates.push({ videoId, score });
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates.slice(0, 6).map(c => c.videoId);
+}
+
+function parseInvidiousSearchCandidates(items, trackTitle = '', trackArtist = '', targetDuration = 0) {
+  if (!Array.isArray(items)) return [];
+  const candidates = [];
+  const seenIds = new Set();
+
+  for (const item of items) {
+    if (!item || !item.videoId || seenIds.has(item.videoId)) continue;
+    const score = scoreVideoCandidate(
+      String(item.title || ''),
+      String(item.author || ''),
+      Number(item.lengthSeconds) || 0,
+      trackTitle,
+      trackArtist,
+      targetDuration
+    );
+    if (score < 0) continue;
+
+    seenIds.add(item.videoId);
+    candidates.push({ videoId: item.videoId, score });
   }
 
   candidates.sort((a, b) => b.score - a.score);
@@ -843,14 +967,11 @@ function parseYouTubeSearchCandidates(html, trackTitle = '', trackArtist = '', t
 
 async function searchYouTubeQuery(queryStr, trackTitle = '', trackArtist = '', targetDur = 0, signal = null) {
   const q = encodeURIComponent(queryStr);
-  const urls = [
-    `${API_BASE}/api/yt/results?search_query=${q}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.youtube.com/results?search_query=${q}`)}`
-  ];
+  const invHost = INVIDIOUS_INSTANCES[0] || 'https://yt.chocolatemoo53.com';
 
   logAudioDiagnostics('SEARCH_YT_QUERY_INIT', { queryStr, trackTitle, trackArtist, targetDur });
 
-  const fetchCandidates = async (url, timeoutMs) => {
+  const fetchHtmlCandidates = async (url, timeoutMs) => {
     const res = await fetchWithTimeout(url, { signal }, timeoutMs);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const html = await res.text();
@@ -859,8 +980,21 @@ async function searchYouTubeQuery(queryStr, trackTitle = '', trackArtist = '', t
     return ids;
   };
 
+  const fetchInvidiousCandidates = async () => {
+    const res = await fetchWithTimeout(`${invHost}/api/v1/search?q=${q}&type=video`, { signal }, 6500);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const ids = parseInvidiousSearchCandidates(json, trackTitle, trackArtist, targetDur);
+    if (!ids || ids.length === 0) throw new Error('No valid candidates');
+    return ids;
+  };
+
   try {
-    const results = await Promise.any(urls.map((u, idx) => fetchCandidates(u, idx === 0 ? 8500 : 9500)));
+    const results = await Promise.any([
+      fetchHtmlCandidates(`${API_BASE}/api/yt/results?search_query=${q}`, 8500),
+      fetchInvidiousCandidates(),
+      fetchHtmlCandidates(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.youtube.com/results?search_query=${q}`)}`, 9500)
+    ]);
     logAudioDiagnostics('SEARCH_YT_QUERY_SUCCESS', { queryStr, count: results.length, candidates: results });
     return results;
   } catch (err) {
@@ -963,7 +1097,7 @@ function isExactSongMatch(candidate, targetTitle, targetArtist, targetDuration =
 async function resolveSearchTrackFullAudio(track, signal = null) {
   if (!track) return track;
 
-  // 1. Instant match against our 100 verified full-length curated studio tracks (strictly checking title, artist, and version)
+  // 1. Instant match against curated verified full-length studio tracks
   const curatedMatch = findMatchingCuratedTrack(track.title, track.artist);
   if (curatedMatch) {
     track.verifiedFullAudioUrl = curatedMatch.verifiedFullAudioUrl || curatedMatch.downloadUrl;
@@ -977,7 +1111,7 @@ async function resolveSearchTrackFullAudio(track, signal = null) {
     return track;
   }
 
-  // 2. Check in-memory resolved search cache (keyed by exact track ID + raw title + full artist + album to avoid collisions)
+  // 2. Check in-memory resolved search cache
   const cacheKey = `${track.id || ''}|||${String(track.title || '').toLowerCase().trim()}|||${String(track.artist || '').toLowerCase().trim()}|||${String(track.album || '').toLowerCase().trim()}`;
   if (resolvedSearchCache.has(cacheKey)) {
     const cached = resolvedSearchCache.get(cacheKey);
@@ -989,60 +1123,87 @@ async function resolveSearchTrackFullAudio(track, signal = null) {
     return track;
   }
 
-  // 3. Run direct full-track search (pre-filtered by isExactSongMatch) and YouTube Official Audio / Topic resolution IN PARALLEL
-  const cleanTitle = normalizeStr(track.title) || track.title;
-  const cleanArtist = getPrimaryArtistNorm(track.artist) || track.artist;
-
-  logAudioDiagnostics('RESOLVE_SEARCH_TRACK_START', { title: track.title, artist: track.artist, cleanTitle, cleanArtist });
-
-  const [saavnSettled, ytSettled] = await Promise.allSettled([
-    fetchFullLengthTracks(`${cleanTitle} ${cleanArtist}`, signal, track.title, track.artist, track.duration),
-    resolveYouTubeVideoIds(track, track.duration, signal)
-  ]);
-
-  let fullMatches = saavnSettled.status === 'fulfilled' ? (saavnSettled.value || []) : [];
-  if (fullMatches.length === 0 && cleanArtist && cleanTitle) {
+  // Coalesce duplicate in-flight resolutions (e.g., prewarm + tap)
+  if (track._resolvePromise && (!signal || !signal.aborted)) {
     try {
-      fullMatches = await fetchFullLengthTracks(`${cleanArtist} ${cleanTitle}`, signal, track.title, track.artist, track.duration);
+      return await track._resolvePromise;
     } catch (_) {}
   }
-  const exactMatch = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist, track.duration));
-  const videoIds = ytSettled.status === 'fulfilled' ? (ytSettled.value || []) : [];
 
-  const resolvedData = {};
-  if (exactMatch && exactMatch.streamUrl) {
-    resolvedData.verifiedFullAudioUrl = exactMatch.streamUrl;
-    resolvedData.downloadUrl = exactMatch.streamUrl;
-    resolvedData.streamUrl = exactMatch.streamUrl;
-    if (exactMatch.duration > 85) resolvedData.duration = exactMatch.duration;
-  }
-  if (videoIds.length > 0) {
-    resolvedData.ytVideoId = videoIds[0];
-    resolvedData.ytCandidateIds = videoIds.slice(1);
-  }
+  const runResolve = async () => {
+    const cleanTitle = normalizeStr(track.title) || track.title;
+    const cleanArtist = getPrimaryArtistNorm(track.artist) || track.artist;
 
-  logAudioDiagnostics('RESOLVED_DATA_RESULT', {
-    title: track.title,
-    hasDirectFullUrl: !!resolvedData.verifiedFullAudioUrl,
-    ytVideoId: resolvedData.ytVideoId || null,
-    totalCandidates: videoIds.length
-  });
+    logAudioDiagnostics('RESOLVE_SEARCH_TRACK_START', { title: track.title, artist: track.artist, cleanTitle, cleanArtist });
 
-  if (resolvedData.verifiedFullAudioUrl || resolvedData.ytVideoId) {
-    Object.assign(track, resolvedData);
-    track.resolvedFull = true;
-    track.needsFullResolve = false;
-    resolvedSearchCache.set(cacheKey, {
-      verifiedFullAudioUrl: track.verifiedFullAudioUrl || null,
-      downloadUrl: track.downloadUrl || null,
-      streamUrl: track.streamUrl || null,
-      ytVideoId: track.ytVideoId || null,
-      ytCandidateIds: [...(track.ytCandidateIds || [])],
-      duration: track.duration
+    const [saavnSettled, ytSettled] = await Promise.allSettled([
+      fetchFullLengthTracks(`${cleanTitle} ${cleanArtist}`, signal, track.title, track.artist, track.duration),
+      resolveYouTubeVideoIds(track, track.duration, signal)
+    ]);
+
+    let fullMatches = saavnSettled.status === 'fulfilled' ? (saavnSettled.value || []) : [];
+    if (fullMatches.length === 0 && cleanArtist && cleanTitle) {
+      try {
+        fullMatches = await fetchFullLengthTracks(`${cleanArtist} ${cleanTitle}`, signal, track.title, track.artist, track.duration);
+      } catch (_) {}
+    }
+    const exactMatch = fullMatches.find(m => isExactSongMatch(m, track.title, track.artist, track.duration));
+    const videoIds = ytSettled.status === 'fulfilled' ? (ytSettled.value || []) : [];
+
+    const resolvedData = {};
+    if (exactMatch && exactMatch.streamUrl) {
+      resolvedData.verifiedFullAudioUrl = exactMatch.streamUrl;
+      resolvedData.downloadUrl = exactMatch.streamUrl;
+      resolvedData.streamUrl = exactMatch.streamUrl;
+      resolvedData.audioExt = 'mp4';
+      if (exactMatch.duration > 85) resolvedData.duration = exactMatch.duration;
+    }
+    if (videoIds.length > 0) {
+      resolvedData.ytVideoId = videoIds[0];
+      resolvedData.ytCandidateIds = videoIds.slice(1);
+    }
+
+    // Extract direct native HTML5 <audio> stream (AAC M4A / Opus WebM) whenever Saavn didn't have a direct match
+    if (!resolvedData.verifiedFullAudioUrl && videoIds.length > 0) {
+      const direct = await resolveDirectAudioFromVideoIds(videoIds, track.title, track.artist, track.duration, signal);
+      if (direct && direct.streamUrl) {
+        resolvedData.verifiedFullAudioUrl = direct.streamUrl;
+        resolvedData.downloadUrl = direct.streamUrl;
+        resolvedData.streamUrl = direct.streamUrl;
+        resolvedData.audioExt = direct.ext;
+        if (direct.duration > 85) resolvedData.duration = direct.duration;
+      }
+    }
+
+    logAudioDiagnostics('RESOLVED_DATA_RESULT', {
+      title: track.title,
+      hasDirectFullUrl: !!resolvedData.verifiedFullAudioUrl,
+      ytVideoId: resolvedData.ytVideoId || null,
+      totalCandidates: videoIds.length
     });
-  }
 
-  return track;
+    if (resolvedData.verifiedFullAudioUrl || resolvedData.ytVideoId) {
+      Object.assign(track, resolvedData);
+      track.resolvedFull = true;
+      track.needsFullResolve = false;
+      resolvedSearchCache.set(cacheKey, {
+        verifiedFullAudioUrl: track.verifiedFullAudioUrl || null,
+        downloadUrl: track.downloadUrl || null,
+        streamUrl: track.streamUrl || null,
+        audioExt: track.audioExt || null,
+        ytVideoId: track.ytVideoId || null,
+        ytCandidateIds: [...(track.ytCandidateIds || [])],
+        duration: track.duration
+      });
+    }
+
+    return track;
+  };
+
+  track._resolvePromise = runResolve().finally(() => {
+    track._resolvePromise = null;
+  });
+  return track._resolvePromise;
 }
 
 function prewarmNextTrack() {
@@ -1656,10 +1817,16 @@ function getDownloadedTracks() {
   }
 }
 
+function isSameDownloadedTrack(a, b) {
+  if (!a || !b) return false;
+  if (a.id && b.id && a.id === b.id) return true;
+  return normalizeStr(a.title) === normalizeStr(b.title) && isPrimaryArtistMatch(a.artist, b.artist);
+}
+
 function saveDownloadedTrack(track) {
   const current = getDownloadedTracks();
   const trackId = track.id || `dl-${Date.now()}`;
-  const existingIdx = current.findIndex(t => t.id === trackId || t.title === track.title);
+  const existingIdx = current.findIndex(t => isSameDownloadedTrack(t, { ...track, id: trackId }));
   const trackObj = {
     id: trackId,
     title: track.title,
@@ -1669,6 +1836,7 @@ function saveDownloadedTrack(track) {
     streamUrl: track.verifiedFullAudioUrl || track.streamUrl,
     downloadUrl: track.verifiedFullAudioUrl || track.downloadUrl,
     verifiedFullAudioUrl: track.verifiedFullAudioUrl || null,
+    audioExt: track.audioExt || null,
     ytVideoId: track.ytVideoId || null,
     ytCandidateIds: track.ytCandidateIds || [],
     duration: track.duration || 210,
@@ -1690,28 +1858,18 @@ async function resolveDownloadAudioUrl(track) {
       await resolveSearchTrackFullAudio(track);
     } catch (_) {}
   }
-  if (track.verifiedFullAudioUrl && track.verifiedFullAudioUrl.startsWith('http')) {
+  if (track.verifiedFullAudioUrl && track.verifiedFullAudioUrl.startsWith('http') && !track.verifiedFullAudioUrl.includes('itunes.apple.com')) {
     return track.verifiedFullAudioUrl;
   }
   if (track.downloadUrl && track.downloadUrl.startsWith('http') && !track.downloadUrl.includes('itunes.apple.com')) {
     return track.downloadUrl;
   }
-  // Try resolving full-length audio stream from YouTube videoId via public Piped/Invidious audio endpoints
   if (track.ytVideoId) {
-    const pipedEndpoints = [
-      `https://pipedapi.kavin.rocks/streams/${track.ytVideoId}`,
-      `https://pipedapi.leptons.xyz/streams/${track.ytVideoId}`
-    ];
-    for (const ep of pipedEndpoints) {
-      try {
-        const res = await fetch(ep);
-        if (res.ok) {
-          const data = await res.json();
-          const streams = data.audioStreams || [];
-          const best = streams.find(s => s.url && (s.mimeType || '').includes('audio/'));
-          if (best && best.url) return best.url;
-        }
-      } catch (_) {}
+    const direct = await resolveDirectAudioFromVideoIds([track.ytVideoId, ...(track.ytCandidateIds || [])], track.title, track.artist, track.duration);
+    if (direct && direct.streamUrl) {
+      track.audioExt = direct.ext;
+      track.verifiedFullAudioUrl = direct.streamUrl;
+      return direct.streamUrl;
     }
   }
   try {
@@ -1722,7 +1880,8 @@ async function resolveDownloadAudioUrl(track) {
     }
   } catch (_) {}
 
-  return track.verifiedFullAudioUrl || track.downloadUrl || track.streamUrl || track.fallbackPreviewUrl || null;
+  const candidate = track.verifiedFullAudioUrl || track.downloadUrl || track.streamUrl || null;
+  return (candidate && !candidate.includes('itunes.apple.com')) ? candidate : null;
 }
 
 async function downloadCurrentTrack() {
@@ -1739,7 +1898,7 @@ async function downloadTrackDirect(track) {
   const trackId = track.id || track.title;
 
   const existingList = getDownloadedTracks();
-  const alreadyInList = existingList.some(d => d.id === trackId || d.title === track.title);
+  const alreadyInList = existingList.some(d => isSameDownloadedTrack(d, { ...track, id: trackId }));
   if (alreadyInList) {
     showToast(`✓ "${track.title}" is already in your Downloaded Songs!`);
     return;
@@ -1748,11 +1907,11 @@ async function downloadTrackDirect(track) {
   showToast(`⏳ Downloading "${track.title}" (Full-Length Track)...`, 4000);
 
   let targetUrl = await resolveDownloadAudioUrl(track);
-  // Never save or trigger download of 30-second preview clips as downloaded songs
   if (targetUrl && targetUrl.includes('itunes.apple.com')) {
     targetUrl = null;
   }
-  const ext = (targetUrl && targetUrl.endsWith('.webm')) ? 'webm' : 'mp3';
+  const ext = track.audioExt ||
+    (targetUrl && targetUrl.includes('.webm') ? 'webm' : (targetUrl && (targetUrl.includes('.m4a') || targetUrl.includes('itag=140') || targetUrl.includes('.mp4')) ? 'm4a' : 'mp3'));
   const filename = `${track.title} - ${track.artist}.${ext}`.replace(/[/\\?%*:|"<>]/g, '_');
 
   try {
@@ -1844,7 +2003,7 @@ function triggerAudioDownload(url, filename) {
 async function deleteDownloadedTrack(trackId, trackTitle) {
   await deleteOfflineAudio(trackId);
   const current = getDownloadedTracks();
-  const updated = current.filter(t => t.id !== trackId && t.title !== trackTitle);
+  const updated = current.filter(t => t.id !== trackId);
   localStorage.setItem('spudaypay_downloads', JSON.stringify(updated));
   showToast(`🗑️ Removed "${trackTitle}" from offline storage.`);
   renderLibraryGrid();
@@ -1876,10 +2035,10 @@ async function startDownloadAllSongs() {
   }
 
   const downloaded = getDownloadedTracks();
-  const toDownload = CURATED_TRACKS.filter(t => !downloaded.some(d => d.id === t.id || d.title === t.title));
+  const toDownload = CURATED_TRACKS.filter(t => !downloaded.some(d => isSameDownloadedTrack(d, t)));
 
   if (toDownload.length === 0) {
-    showToast("✓ All 100 songs are already downloaded!");
+    showToast(`✓ All ${CURATED_TRACKS.length} songs are already downloaded!`);
     return;
   }
 
@@ -2307,7 +2466,7 @@ function renderLibraryGrid() {
         <p style="font-size: 0.82rem; color: var(--text-secondary); max-width: 440px; margin: 0 auto 12px auto;">Download songs to listen 100% offline without internet, and keep music playing while switching apps!</p>
         <button class="btn-filter" id="btnEmptyDownloadAll" style="background: var(--accent-green); color: #000; font-weight: 700; padding: 8px 20px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 8px; border: none; border-radius: 24px; cursor: pointer;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-          Download All 100 Songs Offline
+          Download All ${CURATED_TRACKS.length} Songs Offline
         </button>
       </div>
     `;
@@ -2319,8 +2478,8 @@ function renderLibraryGrid() {
     }
   }
 
-  // Section 2: All 100 Studio Songs with 1-click Download & Download All Header
-  const remainingCount = CURATED_TRACKS.length - downloaded.length;
+  // Section 2: All Curated Studio Songs with 1-click Download & Download All Header
+  const remainingCount = Math.max(0, CURATED_TRACKS.length - downloaded.length);
   const allHeader = document.createElement('div');
   allHeader.style.gridColumn = '1 / -1';
   allHeader.style.margin = '16px 0 10px 0';
@@ -2338,7 +2497,7 @@ function renderLibraryGrid() {
             </button>`
           : `<div style="display: inline-flex; align-items: center; gap: 6px; color: var(--accent-green); font-size: 0.82rem; font-weight: 700; background: rgba(29, 185, 84, 0.15); padding: 5px 12px; border-radius: 20px;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              All 100 Downloaded
+              All ${CURATED_TRACKS.length} Downloaded
             </div>`
         }
       </div>
@@ -2352,7 +2511,7 @@ function renderLibraryGrid() {
   }
 
   CURATED_TRACKS.forEach((track, idx) => {
-    const isDownloaded = downloaded.some(d => d.id === track.id || d.title === track.title);
+    const isDownloaded = downloaded.some(d => isSameDownloadedTrack(d, track));
     const card = document.createElement('div');
     card.className = 'music-card';
     card.innerHTML = `
@@ -2675,7 +2834,7 @@ async function performSearch(query) {
   for (const t of [...localMatches, ...globalCatalogTracks]) {
     const primaryArtist = getPrimaryArtistNorm(t.artist);
     const versionKey = hasMismatchedVersionTag('', t.title, '') ? String(t.title || '').toLowerCase().trim() : normalizeStr(t.title);
-    const key = `${t.id || ''}|${versionKey}|${primaryArtist}`;
+    const key = `${versionKey}|${primaryArtist}`;
     if (!seen.has(key)) {
       seen.add(key);
       combinedResults.push(t);
